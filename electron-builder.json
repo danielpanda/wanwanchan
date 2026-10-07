@@ -14,11 +14,13 @@
       {
         "target": "dmg",
         "arch": [
-          "arm64"
+          "arm64",
+          "x64"
         ]
       }
     ],
     "icon": "build/icon.icns",
+    "artifactName": "WanWan-chan-${version}-${arch}.dmg",
     "category": "public.app-category.utilities",
     "hardenedRuntime": false,
     "gatekeeperAssess": false,

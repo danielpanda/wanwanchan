@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "build:mac": "electron-vite build && electron-builder --mac --arm64",
+    "build:mac": "electron-vite build && electron-builder --mac --arm64 --x64",
     "typecheck": "tsc --noEmit",
     "sprites": "node scripts/gen-sprites.mjs",
     "test": "node --test 'src/**/*.test.ts'",
