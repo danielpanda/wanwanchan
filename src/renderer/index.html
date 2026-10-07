@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>WanWan-chan</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+        overflow: hidden;
+      }
+      /* Fills the 280x260 window; the render loop centers the sprite inside.
+         Drag is a renderer-owned pointer gesture (ADR 0002), not app-region. */
+      #pet {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        /* Belt-and-braces with ctx.imageSmoothingEnabled = false: keeps the
+           compositor from resampling the canvas on fractional DPI scales. */
+        image-rendering: pixelated;
+      }
+      /* Interactive hitboxes so the floating badge and petting head keep their
+         own pointer handling above the drag gesture. */
+      .no-drag-hitbox {
+        position: absolute;
+        display: none;
+      }
+      #badge-hitbox {
+        cursor: pointer;
+        z-index: 10;
+      }
+      #head-hitbox {
+        cursor: grab;
+        z-index: 9;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="pet"></canvas>
+    <div id="badge-hitbox" class="no-drag-hitbox"></div>
+    <div id="head-hitbox" class="no-drag-hitbox"></div>
+    <script type="module" src="./index.ts"></script>
+  </body>
+</html>

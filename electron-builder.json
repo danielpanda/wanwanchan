@@ -1,0 +1,46 @@
+{
+  "appId": "com.wanwanchan.app",
+  "productName": "WanWan-chan",
+  "directories": {
+    "output": "dist"
+  },
+  "files": [
+    "out/**/*",
+    "assets/**/*",
+    "package.json"
+  ],
+  "mac": {
+    "target": [
+      {
+        "target": "dmg",
+        "arch": [
+          "arm64"
+        ]
+      }
+    ],
+    "icon": "build/icon.icns",
+    "category": "public.app-category.utilities",
+    "hardenedRuntime": false,
+    "gatekeeperAssess": false,
+    "identity": null
+  },
+  "dmg": {
+    "title": "WanWan-chan ${version}",
+    "contents": [
+      {
+        "x": 130,
+        "y": 220
+      },
+      {
+        "x": 410,
+        "y": 220,
+        "type": "link",
+        "path": "/Applications"
+      }
+    ],
+    "window": {
+      "width": 540,
+      "height": 380
+    }
+  }
+}

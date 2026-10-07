@@ -1,0 +1,17 @@
+node_modules/
+out/
+dist/
+.DS_Store
+.vscode
+.idea
+*.log
+
+# Local-only art and dev artifacts (kept on disk; full set lives on the `local` branch)
+docs/reference/
+docs/superpowers/
+assets/art-src/
+assets/sprites/frenchie/
+assets/sprites/black_french_bulldog/
+assets/sprites/black_frenchie/
+.scratch/
+skills-lock.json

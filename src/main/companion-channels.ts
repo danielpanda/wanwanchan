@@ -1,0 +1,11 @@
+// IPC channels for Tamagotchi features and Companion Hub window.
+export const COMPANION_GET_SETTINGS = 'wanwan:companion:get-settings'
+export const COMPANION_SAVE_SETTINGS = 'wanwan:companion:save-settings'
+export const COMPANION_OPEN_SETTINGS = 'wanwan:companion:open-settings'
+export const COMPANION_SETTINGS_CHANGED = 'wanwan:companion:settings-changed'
+export const COMPANION_TRIGGER_ACTION = 'wanwan:companion:trigger-action'
+export const AI_STATUS_CHANNEL = 'wanwan:ai:status'
+export const EVOLUTION_BEGIN_CHANNEL = 'wanwan:evolution:begin'
+export const EVOLUTION_END_CHANNEL = 'wanwan:evolution:end'
+export const DRAG_BEGIN_CHANNEL = 'wanwan:drag:begin'
+export const DRAG_END_CHANNEL = 'wanwan:drag:end'
