@@ -11,6 +11,9 @@ type too fast — and digivolves when you've earned it.
 
 Electron · TypeScript · Apple Silicon & Intel
 
+⭐ **Like it?** A star on the repo helps a solo project get noticed — it's free
+and it means a lot.
+
 </div>
 
 ---

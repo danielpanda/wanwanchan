@@ -1,0 +1,44 @@
+name: Bug report
+description: Something is broken or misbehaving
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. The more detail, the faster it gets fixed.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Which version are you running? (tray menu → About, or the DMG filename)
+      placeholder: "0.1.3"
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Mac
+      description: Chip + macOS version.
+      placeholder: "Apple Silicon M2, macOS 15"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead?
+      placeholder: "Steps to reproduce: 1. … 2. … 3. …"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / output
+      description: Paste console output if you ran from source (`npm run dev`), or anything suspicious.
+      render: shell
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Drag-and-drop a screenshot or screen recording here if it helps.

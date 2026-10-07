@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest an idea for WanWan-chan
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What's the gap or pain point this would solve?
+      placeholder: "I can't see the pet when it sleeps because…"
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed idea
+      description: What should it do? Describe the behavior you'd like.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any other approaches you've thought about?
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Skins, animation states, links, mockups — anything that helps.
