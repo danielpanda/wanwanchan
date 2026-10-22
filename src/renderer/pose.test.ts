@@ -21,6 +21,8 @@ test('priority: sleep > overheat > laugh > happy > confused > typing/idle', () =
   assert.equal(pose({ ...all, overheated: false }), 'laugh')
   assert.equal(pose({ ...all, overheated: false, isPetting: false }), 'happy')
   assert.equal(pose({ isTyping: true, agentStatus: 'thinking' }), 'confused')
+  assert.equal(pose({ agentStatus: 'approval' }), 'confused')
+  assert.equal(pose({ agentStatus: 'error' }), 'confused')
   assert.equal(pose({ isTyping: true }), 'typing')
   assert.equal(pose({}), 'idle')
 })

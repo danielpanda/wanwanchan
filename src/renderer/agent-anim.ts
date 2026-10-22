@@ -10,6 +10,7 @@ export interface AgentAnimState {
   hopVy: number
   hopElapsedMs: number
   doneTimerMs: number
+  alertTimerMs: number
 }
 
 /**
@@ -27,6 +28,14 @@ const GRAVITY = 320
 const HOP_INITIAL_VY = -110
 const HOP_DURATION_MS = 600
 const DONE_STATE_TIMEOUT_MS = 4000
+const ERROR_STATE_TIMEOUT_MS = 5000
+const APPROVAL_STATE_TIMEOUT_MS = 12000
+
+export interface AgentCallbacks {
+  onDone?: () => void
+  onApproval?: () => void
+  onError?: () => void
+}
 
 export function createAgentAnimState(): AgentAnimState {
   return {
@@ -38,14 +47,19 @@ export function createAgentAnimState(): AgentAnimState {
     hopVy: 0,
     hopElapsedMs: 0,
     doneTimerMs: 0,
+    alertTimerMs: 0,
   }
 }
 
 export function handleAgentPayload(
   state: AgentAnimState,
   payload: AgentPayload,
-  onDone?: () => void,
+  callbacks?: AgentCallbacks | (() => void),
 ): void {
+  const onDone = typeof callbacks === 'function' ? callbacks : callbacks?.onDone
+  const onApproval = typeof callbacks === 'object' ? callbacks?.onApproval : undefined
+  const onError = typeof callbacks === 'object' ? callbacks?.onError : undefined
+
   const prev = state.status
   state.status = payload.status
   if (payload.agent) state.agentName = payload.agent
@@ -59,6 +73,16 @@ export function handleAgentPayload(
     if (prev !== 'done') {
       onDone?.()
     }
+  } else if (payload.status === 'approval') {
+    state.hopActive = false
+    state.hopDy = 0
+    state.alertTimerMs = 0
+    onApproval?.()
+  } else if (payload.status === 'error') {
+    state.hopActive = false
+    state.hopDy = 0
+    state.alertTimerMs = 0
+    onError?.()
   }
 }
 
@@ -110,6 +134,16 @@ export function tickAgentAnim(
   if (state.status === 'done') {
     state.doneTimerMs += dtMs
     if (state.doneTimerMs >= DONE_STATE_TIMEOUT_MS) {
+      state.status = 'idle'
+      onResetIdle?.()
+    }
+  }
+
+  // Auto-reset from 'error' or 'approval' to 'idle' after timeout
+  if (state.status === 'error' || state.status === 'approval') {
+    state.alertTimerMs += dtMs
+    const limit = state.status === 'approval' ? APPROVAL_STATE_TIMEOUT_MS : ERROR_STATE_TIMEOUT_MS
+    if (state.alertTimerMs >= limit) {
       state.status = 'idle'
       onResetIdle?.()
     }

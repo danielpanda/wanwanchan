@@ -244,13 +244,27 @@ export async function start(canvas: HTMLCanvasElement): Promise<void> {
   })
 
   window.wanwan?.onAiStatus?.((payload) => {
-    handleAgentPayload(agentAnim, payload, () => {
-      // AI done callback
-      playHappyHop()
-      const salutation = userName ? `, ${userName}` : ''
-      const msg = payload.message || `AI task completed${salutation}! 🎉`
-      showSpeechBubble(speechBubble, msg, 4000)
+    handleAgentPayload(agentAnim, payload, {
+      onDone: () => {
+        playHappyHop()
+        const salutation = userName ? `, ${userName}` : ''
+        const msg = payload.message || `AI task completed${salutation}! 🎉`
+        showSpeechBubble(speechBubble, msg, 4000)
+      },
+      onApproval: () => {
+        playReminderChime()
+        const msg = payload.message || 'Approval required in terminal! ⚠️'
+        showSpeechBubble(speechBubble, msg, 6000)
+      },
+      onError: () => {
+        const msg = payload.message || 'Task error encountered! ❌'
+        showSpeechBubble(speechBubble, msg, 4500)
+      },
     })
+
+    if (payload.status === 'thinking' && payload.message) {
+      showSpeechBubble(speechBubble, payload.message, 3000)
+    }
   })
 
   window.wanwan?.onTriggerAction?.((action, payload) => {
@@ -293,6 +307,21 @@ export async function start(canvas: HTMLCanvasElement): Promise<void> {
         handleAgentPayload(agentAnim, { status: 'done', agent: 'test-agent' }, () => {
           playHappyHop()
           showSpeechBubble(speechBubble, `Task completed${salutation}! 🎉`)
+        })
+        break
+      case 'test-ai-approval':
+        handleAgentPayload(agentAnim, { status: 'approval', agent: 'test-agent' }, {
+          onApproval: () => {
+            playReminderChime()
+            showSpeechBubble(speechBubble, 'Approval required in terminal! ⚠️', 5000)
+          },
+        })
+        break
+      case 'test-ai-error':
+        handleAgentPayload(agentAnim, { status: 'error', agent: 'test-agent' }, {
+          onError: () => {
+            showSpeechBubble(speechBubble, 'Task failed! ❌', 4000)
+          },
         })
         break
       case 'test-ai-idle':

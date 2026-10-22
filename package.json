@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "sprites": "node scripts/gen-sprites.mjs",
     "test": "node --test 'src/**/*.test.ts'",
-    "compose": "node scripts/compose-skin.mjs"
+    "compose": "node scripts/compose-skin.mjs",
+    "hooks:install": "node scripts/setup-claude-hooks.mjs",
+    "hooks:uninstall": "node scripts/setup-claude-hooks.mjs --uninstall"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
