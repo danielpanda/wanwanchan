@@ -1,6 +1,8 @@
 // Pose selection: which sheet the character draws this frame (spec §9).
 // Pure, DOM-free; see pose.test.ts.
 
+import type { AgentStatus } from '../main/ai-server.ts'
+
 export type Expression = 'happy' | 'laugh' | 'confused'
 
 export type Pose =
@@ -16,7 +18,7 @@ export interface PoseInput {
   isTyping: boolean
   overheated: boolean
   isPetting: boolean
-  agentStatus: 'idle' | 'thinking' | 'done'
+  agentStatus: AgentStatus
   /** Expression sheets this skin provides; missing ones fall through. */
   expressions: ReadonlySet<Expression>
 }
@@ -30,7 +32,12 @@ export function selectPose(p: PoseInput): Pose {
   if (p.isTyping && p.overheated) return 'overheat'
   if (p.isPetting && p.expressions.has('laugh')) return 'laugh'
   if (p.agentStatus === 'done' && p.expressions.has('happy')) return 'happy'
-  if (p.agentStatus === 'thinking' && p.expressions.has('confused')) return 'confused'
+  if (
+    (p.agentStatus === 'approval' || p.agentStatus === 'error' || p.agentStatus === 'thinking') &&
+    p.expressions.has('confused')
+  ) {
+    return 'confused'
+  }
   return p.isTyping ? 'typing' : 'idle'
 }
 

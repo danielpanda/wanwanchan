@@ -611,9 +611,17 @@
           <div class="section-title">Test reactions</div>
           <div class="row">
             <button class="btn btn-secondary" id="btnAiThinking">Thinking</button>
+            <button class="btn btn-warning" id="btnAiApproval">Approval ⚠️</button>
+            <button class="btn btn-danger" id="btnAiError">Error ❌</button>
             <button class="btn btn-success" id="btnAiDone">Happy hop</button>
             <button class="btn btn-secondary" id="btnAiIdle">Idle</button>
           </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Claude Code Setup</div>
+          <div class="help-text">Connect Agumon to Claude Code terminal events automatically:</div>
+          <div class="code-box">npm run hooks:install</div>
         </div>
 
         <div class="section">
@@ -793,6 +801,8 @@
       $('btnTestStretch').addEventListener('click', () => window.wanwan?.triggerAction('test-stretch'));
       $('btnTestWater').addEventListener('click', () => window.wanwan?.triggerAction('test-water'));
       $('btnAiThinking').addEventListener('click', () => window.wanwan?.triggerAction('test-ai-thinking'));
+      $('btnAiApproval').addEventListener('click', () => window.wanwan?.triggerAction('test-ai-approval'));
+      $('btnAiError').addEventListener('click', () => window.wanwan?.triggerAction('test-ai-error'));
       $('btnAiDone').addEventListener('click', () => window.wanwan?.triggerAction('test-ai-done'));
       $('btnAiIdle').addEventListener('click', () => window.wanwan?.triggerAction('test-ai-idle'));
 

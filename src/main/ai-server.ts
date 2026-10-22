@@ -4,12 +4,13 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { BrowserWindow } from 'electron'
 import { AI_STATUS_CHANNEL } from './companion-channels.ts'
 
-export type AgentStatus = 'idle' | 'thinking' | 'done'
+export type AgentStatus = 'idle' | 'thinking' | 'done' | 'approval' | 'error'
 
 export interface AgentPayload {
   status: AgentStatus
   agent?: string
   message?: string
+  tool?: string
 }
 
 export interface AiServerState {
@@ -19,7 +20,17 @@ export interface AiServerState {
 }
 
 export function parseAgentStatus(raw: unknown): AgentStatus {
-  if (raw === 'thinking' || raw === 'done' || raw === 'idle') return raw
+  if (typeof raw === 'string') {
+    const s = raw.toLowerCase().trim()
+    if (s === 'thinking' || s === 'done' || s === 'idle' || s === 'approval' || s === 'error') {
+      return s as AgentStatus
+    }
+    if (s === 'userpromptsubmit' || s === 'pretooluse') return 'thinking'
+    if (s === 'permissionrequest') return 'approval'
+    if (s === 'stop') return 'done'
+    if (s === 'stopfailure' || s === 'posttoolusefailure') return 'error'
+    if (s === 'sessionend') return 'idle'
+  }
   return 'idle'
 }
 
@@ -66,15 +77,24 @@ export function startAiServer(
       req.on('end', () => {
         try {
           const parsed = (body ? JSON.parse(body) : {}) as Record<string, unknown>
-          const nextStatus = parseAgentStatus(parsed.status)
+          const rawStatus = parsed.status ?? parsed.hook_event_name ?? parsed.event
+          const nextStatus = parseAgentStatus(rawStatus)
           const agent = typeof parsed.agent === 'string' ? parsed.agent.trim() : state.currentAgent
-          const message = typeof parsed.message === 'string' ? parsed.message.trim() : undefined
+          const tool = typeof parsed.tool === 'string' ? parsed.tool.trim() : (typeof parsed.tool_name === 'string' ? parsed.tool_name.trim() : undefined)
+          let message = typeof parsed.message === 'string' ? parsed.message.trim() : undefined
+
+          if (!message) {
+            if (nextStatus === 'approval') message = 'Approval required in terminal! ⚠️'
+            else if (nextStatus === 'error') message = 'Agent error encountered! ❌'
+            else if (nextStatus === 'done') message = 'Task completed! 🎉'
+            else if (nextStatus === 'thinking' && tool) message = `Running ${tool}...`
+          }
 
           state.currentStatus = nextStatus
           state.currentAgent = agent
           state.lastUpdated = Date.now()
 
-          const payload: AgentPayload = { status: nextStatus, agent, message }
+          const payload: AgentPayload = { status: nextStatus, agent, message, tool }
           const win = getWin()
           if (win && !win.isDestroyed()) {
             win.webContents.send(AI_STATUS_CHANNEL, payload)

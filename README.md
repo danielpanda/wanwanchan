@@ -67,20 +67,39 @@ Grab a `.dmg` from the [releases page](https://github.com/danielpanda/wanwanchan
    counter needs it; nothing is logged or sent anywhere — the count is kept in
    memory only.
 
-## Agent webhook
+## Agent webhook & Claude Code Integration
 
 The app listens on `127.0.0.1:3721` (localhost only) for agent status:
 
 ```sh
 curl -X POST http://127.0.0.1:3721/agent/status \
   -H 'Content-Type: application/json' \
-  -d '{"status":"thinking","agent":"my-agent"}'
+  -d '{"status":"thinking","agent":"claude-code","message":"Running tests..."}'
 
-# status: "idle" | "thinking" | "done"
+# status: "idle" | "thinking" | "approval" | "error" | "done"
 ```
 
-Hook it into your agent's lifecycle so the pet reacts while your code
-compiles, agents think, and tests run.
+### Automatic Claude Code Hooks
+
+You can automatically connect Agumon to your [Claude Code](https://claude.com/claude-code) terminal sessions so Agumon thinks when Claude runs tools, alerts you with a chime when terminal approval is needed, and does a happy hop on task completion:
+
+```sh
+# One-time setup: registers lifecycle hooks in ~/.claude/settings.json
+npm run hooks:install
+
+# To uninstall hooks later if needed:
+npm run hooks:uninstall
+```
+
+Supported Claude Code events:
+- `UserPromptSubmit`: Agumon enters thinking gaze and shows a thought bubble.
+- `PreToolUse`: Shows the active tool ticker (e.g. `Bash: npm test`, `Edit: file.ts`).
+- `PermissionRequest`: Alerts you that Claude Code needs permission/approval in the terminal (`Approval required! ⚠️`).
+- `Stop`: Happy hop animation with celebratory completion chime 🎉.
+- `StopFailure`: Confused/error alert on failed execution ❌.
+- `SessionEnd`: Resets back to idle.
+
+The relay hook script is non-blocking (max 250ms timeout) and fail-safe, so Claude Code is never slowed down even when WanWan-chan is closed.
 
 ## Build from source
 

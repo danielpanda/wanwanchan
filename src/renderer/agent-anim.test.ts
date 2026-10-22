@@ -50,3 +50,48 @@ test('done status automatically resets to idle after timeout', () => {
   assert.equal(state.status, 'idle')
   assert.equal(reset, true)
 })
+
+test('approval and error statuses trigger respective callbacks and auto-reset', () => {
+  const state = createAgentAnimState()
+  let approvalCalled = false
+  let errorCalled = false
+
+  handleAgentPayload(
+    state,
+    { status: 'approval', agent: 'claude-code' },
+    {
+      onApproval: () => {
+        approvalCalled = true
+      },
+      onError: () => {
+        errorCalled = true
+      },
+    },
+  )
+  assert.equal(state.status, 'approval')
+  assert.equal(approvalCalled, true)
+  assert.equal(errorCalled, false)
+
+  handleAgentPayload(
+    state,
+    { status: 'error', agent: 'claude-code' },
+    {
+      onApproval: () => {
+        approvalCalled = true
+      },
+      onError: () => {
+        errorCalled = true
+      },
+    },
+  )
+  assert.equal(state.status, 'error')
+  assert.equal(errorCalled, true)
+
+  // Test error auto-reset
+  let reset = false
+  tickAgentAnim(state, 6000, () => {
+    reset = true
+  })
+  assert.equal(state.status, 'idle')
+  assert.equal(reset, true)
+})

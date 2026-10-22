@@ -7,6 +7,11 @@ test('parseAgentStatus validates allowed statuses', () => {
   assert.equal(parseAgentStatus('thinking'), 'thinking')
   assert.equal(parseAgentStatus('done'), 'done')
   assert.equal(parseAgentStatus('idle'), 'idle')
+  assert.equal(parseAgentStatus('approval'), 'approval')
+  assert.equal(parseAgentStatus('error'), 'error')
+  assert.equal(parseAgentStatus('PermissionRequest'), 'approval')
+  assert.equal(parseAgentStatus('UserPromptSubmit'), 'thinking')
+  assert.equal(parseAgentStatus('StopFailure'), 'error')
   assert.equal(parseAgentStatus('invalid'), 'idle')
   assert.equal(parseAgentStatus(null), 'idle')
 })
@@ -58,6 +63,27 @@ test('startAiServer handles GET and POST requests', async () => {
     assert.equal(postRes.ok, true)
     assert.equal(postRes.payload.status, 'thinking')
     assert.equal(serverInst.getState().currentStatus, 'thinking')
+
+    // Test POST /agent/status with approval
+    const postApprovalRes = await new Promise<{ ok: boolean; payload: { status: string; message: string } }>((resolve, reject) => {
+      const req = request(
+        `http://127.0.0.1:${testPort}/agent/status`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+        (res) => {
+          let data = ''
+          res.on('data', (c) => {
+            data += c
+          })
+          res.on('end', () => resolve(JSON.parse(data)))
+        },
+      )
+      req.on('error', reject)
+      req.write(JSON.stringify({ hook_event_name: 'PermissionRequest' }))
+      req.end()
+    })
+    assert.equal(postApprovalRes.ok, true)
+    assert.equal(postApprovalRes.payload.status, 'approval')
+    assert.equal(serverInst.getState().currentStatus, 'approval')
   } finally {
     serverInst.stop()
   }
