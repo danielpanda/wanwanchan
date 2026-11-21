@@ -1,147 +1,134 @@
-<div align="center">
-
 # WanWan-chan
 
-**An animated Agumon desktop companion for macOS**
+A lightweight pixel cat that lives on your macOS desktop. Transparent, always on top, click-through everywhere except the cat itself. Built with Tauri 2 + Rust, with a React/Tailwind settings window and a plain-TypeScript Canvas 2D renderer. Fully offline.
 
-It idles. It watches you type. It naps when you go quiet, overheats when you
-type too fast — and digivolves when you've earned it.
+- Menu bar app (no Dock icon), draggable, remembers its position, multi-monitor aware
+- 14 animated states driven by a priority-based state machine (idle, blink, walk, run, sit, sleep, look, typing, jump, happy, thinking, drag, drop, error)
+- Reacts to mouse (looks at the cursor, jumps on click, optional cursor-follow) and keyboard (types along, gets excited when you type fast)
+- Bring your own sprites (transparent PNG or sprite sheet + JSON), no source edits
+- Optional AI-agent awareness through a local-only endpoint
 
-[Latest release](https://github.com/danielpanda/wanwanchan/releases/latest) · [Contributing](CONTRIBUTING.md) · [MIT License](LICENSE.md)
+## Install
 
-Electron · TypeScript · Apple Silicon & Intel
+**From a DMG** – open `WanWan-chan_0.2.0_aarch64.dmg`, drag WanWan-chan to Applications, launch it.
+Builds from this repo are ad-hoc signed, not notarized. If Gatekeeper blocks a *downloaded* copy: right-click → Open, or
+`xattr -dr com.apple.quarantine /Applications/WanWan-chan.app`.
 
-⭐ **Like it?** A star on the repo helps a solo project get noticed — it's free
-and it means a lot.
+**Homebrew (custom tap)** – after you publish a release, see `Casks/wanwanchan.rb`:
 
-</div>
-
----
-
-## Features
-
-- **Reacts to your typing** — a global keystroke-per-second counter drives the
-  animation state: idle → typing → **overheat** (tongue out, steam, rapid
-  paw-drumming) as you speed up.
-- **Sleeps when you're away** — no input for a while and it dozes off, with a
-  transition pose and a wake-up grumble.
-- **Eyes follow your cursor** — a separate pupil layer tracks pointer angle in
-  real time.
-- **Pick it up** — press and drag to lift it; it dangles from the grab point,
-  stretches, wobbles, then falls, squashes and goes dizzy on release.
-- **Pet it** — click gently and it smiles; expressions include happy, laugh and
-  confused.
-- **Pomodoro timer** — a tray-driven focus timer with a badge over the sprite,
-  plus a stretch reminder that triggers the full-screen
-  **Agumon → WarGreymon evolution cutscene** (Agumon skin only).
-- **Ghost Mode** — click-through: the pet stays visible but passes all mouse
-  events to the apps beneath it.
-- **Two skins** — Agumon and Black French Bulldog, switchable from the tray.
-- **AI agent status** — a local webhook lets coding agents
-  ([Claude Code](https://claude.com/claude-code), Aider, anything that can
-  `curl`) show `thinking` / `done` state on the pet.
-- Sounds, speech bubbles and steam particles included.
-
-## Download
-
-Grab a `.dmg` from the [releases page](https://github.com/danielpanda/wanwanchan/releases/latest):
-
-| File | Mac |
-|---|---|
-| `WanWan-chan-<version>-arm64.dmg` | Apple Silicon (M1/M2/M3/M4) |
-| `WanWan-chan-<version>-x64.dmg` | Intel |
-
-### First launch
-
-1. Drag **WanWan-chan** to `Applications`.
-2. The build is unsigned, so Gatekeeper will complain on first open.
-   Easiest fix after the "blocked" dialog:
-
-   ```sh
-   xattr -cr /Applications/WanWan-chan.app
-   ```
-
-   …or allow it via **System Settings → Privacy & Security → Open Anyway**.
-3. Grant **Accessibility** permission when prompted
-   (**System Settings → Privacy & Security → Accessibility**). The keystroke
-   counter needs it; nothing is logged or sent anywhere — the count is kept in
-   memory only.
-
-## Agent webhook & Claude Code Integration
-
-The app listens on `127.0.0.1:3721` (localhost only) for agent status:
-
-```sh
-curl -X POST http://127.0.0.1:3721/agent/status \
-  -H 'Content-Type: application/json' \
-  -d '{"status":"thinking","agent":"claude-code","message":"Running tests..."}'
-
-# status: "idle" | "thinking" | "approval" | "error" | "done"
+```bash
+brew tap YOUR_GITHUB_USER/wanwanchan
+brew install --cask wanwanchan
 ```
 
-### Automatic Claude Code Hooks
+## Develop
 
-You can automatically connect Agumon to your [Claude Code](https://claude.com/claude-code) terminal sessions so Agumon thinks when Claude runs tools, alerts you with a chime when terminal approval is needed, and does a happy hop on task completion:
+Requirements: macOS 11+, Node 18+, Rust (stable), Xcode Command Line Tools.
 
-```sh
-# One-time setup: registers lifecycle hooks in ~/.claude/settings.json
-npm run hooks:install
-
-# To uninstall hooks later if needed:
-npm run hooks:uninstall
-```
-
-Supported Claude Code events:
-- `UserPromptSubmit`: Agumon enters thinking gaze and shows a thought bubble.
-- `PreToolUse`: Shows the active tool ticker (e.g. `Bash: npm test`, `Edit: file.ts`).
-- `PermissionRequest`: Alerts you that Claude Code needs permission/approval in the terminal (`Approval required! ⚠️`).
-- `Stop`: Happy hop animation with celebratory completion chime 🎉.
-- `StopFailure`: Confused/error alert on failed execution ❌.
-- `SessionEnd`: Resets back to idle.
-
-The relay hook script is non-blocking (max 250ms timeout) and fail-safe, so Claude Code is never slowed down even when WanWan-chan is closed.
-
-## Build from source
-
-Requires Node.js 20+ and npm.
-
-```sh
+```bash
 npm install
-npm run dev          # run in dev mode
-npm test             # unit tests (node:test)
-npm run typecheck    # tsc --noEmit
-npm run build:mac    # DMGs for arm64 + x64 into dist/
+npm run tauri dev      # run the app
+npm test               # vitest: state machine + sprite config
+(cd src-tauri && cargo test)
+npm run tauri build    # WanWan-chan.app + DMG in src-tauri/target/release/bundle/
+npm run release        # same, and prints the sha256 for the Homebrew cask
+npm run assets         # regenerate the default cat, app icon and tray icon
 ```
 
-## Project layout
+Relaunching the app (Finder/Spotlight) opens Settings. The menu bar icon has Show/Hide, Always on Top, Jump, Reset Position, Settings and Quit.
+
+## Permissions
+
+| Feature | Permission | Notes |
+|---|---|---|
+| Mouse look / click-through | none | Event-driven global mouse-move monitor |
+| Typing reaction | **Input Monitoring** | Only *that* a key was pressed is observed; key codes and characters are never read, stored or sent. Grant it in Settings → Behavior → Keyboard. If you skip it, everything else still works. |
+| Launch at login | none | Uses a LaunchAgent |
+| AI integration | none | Listens on `127.0.0.1` only, and only while enabled |
+
+## Speech bubbles & reminders
+
+Settings → **Notifications**. The character talks through pixel-style speech bubbles (Bahasa Indonesia or English):
+
+- **Reminders** – drink water, eye rest (20-20-20), posture, stretch, lunch, bedtime, plus any custom ones (repeat every N minutes, or daily at a time). Reminders have *Later 10m* / *OK* buttons, wait for a pause while you are typing, and are held back during **quiet hours**.
+- **Extras** – time-of-day greeting, welcome back after a long break, random chatter, "Geli ih!" when poked / "purr~" when petted, agent updates (done / error / needs you), and a break suggestion after ~45 min of non-stop typing (only key *counts* are used).
+- Optional 8-bit blip sound. Everything is driven by a single timer armed for the next due item, so there is no polling.
+
+## Custom characters
+
+**Import does the cleanup for you** (Settings → Character → *Import PNG…*; both steps can be switched off):
+
+1. **Clean up** – removes a solid background by flood-filling from the border (white eyes etc. inside the subject are kept, and background trapped between the legs is cleared), detects pixel art that was enlarged by an integer factor and restores the native pixels so it stays crisp, and shrinks other large images smoothly.
+2. **Animate** – a single still image gets a full generated animation set (breathing, waddle, run, jump, squash, sleep, hearts, …) using pixel-exact squash/stretch, lean and lift. Sprite sheets are split into frames automatically and left as-is.
+
+The original is kept, so *Re-process* can redo it with different options.
+
+Settings → Character → **Import PNG…** copies your image to
+`~/Library/Application Support/com.wanwanchan.app/characters/<id>/` as `sheet.png` + `sprite.json`. Set the frame size, use *Auto-split rows* or define animations, and map them to states. You can also drop your own folder there. `sprite.json`:
+
+```json
+{
+  "name": "My Pet",
+  "frameWidth": 32,
+  "frameHeight": 32,
+  "animations": {
+    "idle": { "start": 0, "count": 2, "fps": 3, "loop": true },
+    "walk": { "start": 8, "count": 4, "fps": 8 },
+    "peek": { "frames": [3, 2, 3, 4], "fps": 4 }
+  },
+  "states": { "idle": "idle", "walk": "walk", "look": "peek" }
+}
+```
+
+Frames are numbered left-to-right, top-to-bottom. Sprites should face **right** (the app mirrors them). Any state without a mapping falls back to the animation with the same name, then `idle`; `blink` is skipped if absent. The default cat is generated by `tools/make-assets.mjs`.
+
+## AI coding agents
+
+**Fastest way:** Settings → AI Integration → *Connect your tools*. One click installs (and removes) the hooks for Claude Code, Cursor, Codex and OpenCode, and a zsh integration for **any command** (builds, tests, scripts, and agents without hooks such as Antigravity). Config files are backed up (`*.bak-wanwanchan-<time>`), existing hooks are kept, and installing twice never duplicates entries.
+
+| Pet reaction | Meaning |
+|---|---|
+| thinking pose | agent got your prompt |
+| typing on a laptop | running tools / commands |
+| looking around + bubble | waiting for your permission / input |
+| happy + hearts + bubble "(2m 14s)" | finished |
+| sad + sweat drop | failed |
+
+Wrap any command by hand with `wanwanchan-run npm test` (it keeps the command's exit code). The terminal integration stays silent for commands under 5 s and for interactive programs (vim, ssh, claude, …).
+
+Manual setup details:
+
+Enable Settings → AI Integration. WanWan-chan then listens on `127.0.0.1:47321` for events and maps normalized states to animations: thinking → thinking, working → typing, waiting → looking around, completed → happy, error → sad. Settings has copy-paste setup snippets and a **Test animation** simulator.
+
+Send events with the helper (written to `~/Library/Application Support/com.wanwanchan.app/bin/wanwanchan-notify`) or plain HTTP:
+
+```bash
+curl -X POST "http://127.0.0.1:47321/event?agent=custom&state=thinking"
+```
+
+The integrations are **not equivalent**, because the tools expose different things:
+
+| Agent | Mechanism | What you get |
+|---|---|---|
+| Claude Code | [hooks](https://docs.claude.com/en/docs/claude-code/hooks) in `~/.claude/settings.json` | thinking, working, waiting, completed |
+| OpenAI Codex CLI | `notify` in `~/.codex/config.toml` | completion only |
+| Cursor | [hooks.json](https://cursor.com/docs/agent/hooks) | prompt submitted, file edited, stop; behavior varies by version |
+| OpenCode | plugin in `~/.config/opencode/plugins/` | session idle/error and tool use (event names from its plugin docs) |
+| Google Antigravity | none that I could verify | use the generic endpoint or simulator |
+
+Snippets for Cursor, OpenCode and Codex were written from documentation, not tested against live installs of those tools; check each tool's current docs if something doesn't fire.
+
+## Architecture
 
 ```
-src/main/       Electron main: window, tray, input hook, AI webhook, settings
-src/preload/    Context bridge
-src/renderer/   Animation state machines: idle, typing, sleep, drag, petting,
-                overheat/steam, evolution cutscene, timer badge
-assets/sprites/ Composed sprite sheets (one strip per state, per skin)
-scripts/        Sprite composition and asset pipeline
-docs/           ADRs, specs, skin docs
+src-tauri/src
+  lib.rs         windows, tray, commands, applying settings
+  input.rs       NSEvent global monitors (mouse, key count) + Input Monitoring check
+  agents.rs      127.0.0.1 listener, event normalization
+  characters.rs  user sprite storage and validation
+  settings.rs    JSON settings (settings.json in the app config dir)
+src/pet          renderer: fsm.ts (priority state machine), sprite.ts, pet.ts
+src/settings     React settings UI
 ```
 
-Domain vocabulary and architecture notes live in [`CONTEXT.md`](CONTEXT.md)
-and [`docs/adr/`](docs/adr/).
-
-## Contributing
-
-PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Legal
-
-This is an **unofficial fan project**. Agumon and Digimon are trademarks of
-their respective owners (Bandai Namco Entertainment / Toei Animation). This
-project is not affiliated with or endorsed by them, is free, and is
-non-commercial. The sprites are fan art; if you are a rights holder and want
-something removed, please [open an issue](https://github.com/danielpanda/wanwanchan/issues)
-and it will be taken down promptly.
-
-## License
-
-Code is released under the [MIT License](LICENSE.md). The sprite art in
-`assets/` is fan art and not licensed for commercial use — see *Legal* above.
+The pet window covers one monitor, is transparent, and ignores the mouse except while the cursor is over an opaque sprite pixel. Movement is a CSS transform snapped to device pixels, so the sprite is never smoothed. Timers wake only for the next sprite frame or state expiry; a render loop only runs while moving, jumping or dragging; hiding the character stops everything.

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Menu-bar only app: no Dock icon. -->
+  <key>LSUIElement</key>
+  <true/>
+  <key>NSHumanReadableCopyright</key>
+  <string>WanWan-chan</string>
+  <!-- Shown by macOS when the optional typing reaction asks for Input Monitoring.
+       WanWan-chan only counts key events; it never reads which keys were pressed. -->
+  <key>NSInputMonitoringUsageDescription</key>
+  <string>WanWan-chan only detects that you are typing, to animate your pet. It never records which keys you press.</string>
+</dict>
+</plist>
