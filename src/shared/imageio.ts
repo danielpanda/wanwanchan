@@ -2,8 +2,9 @@ import { alphaOf, animationsFromGuess, guessGrid } from "./detect";
 import {
   animateStill, cropToContent, detectBlock, downsampleBlocks, newImg, packSheet, removeBackground, type Img,
 } from "./imageprep";
+import { chromaKey, composeSheet, detectFrameCount, splitStrip, type KeyColor, type StripAnim } from "./strip";
 import type { SpriteConfig } from "./types";
-import { normalizeConfig } from "../pet/sprite";
+import { normalizeConfig, resolveAnim } from "../pet/sprite";
 
 export interface ImportOptions { clean: boolean; animate: boolean }
 export interface ImportResult { png: string; config: SpriteConfig; notes: string[]; suggestedScale: number }
@@ -89,6 +90,80 @@ async function alphaOfCanvas(c: HTMLCanvasElement) {
   const alpha = new Uint8Array(img.w * img.h);
   for (let i = 0; i < alpha.length; i++) alpha[i] = img.d[i * 4 + 3];
   return { w: img.w, h: img.h, alpha };
+}
+
+// ---------------------------------------------------------------- one row per state
+
+export interface StripOptions { key: KeyColor; /** 0 = detect */ frames: number; clean: boolean }
+
+/** Strips taller than this (non-pixel-art) are scaled down; same canvas size for every row keeps the scale consistent. */
+const STRIP_MAX_H = 160;
+
+/** Background removal, pixel-art restore and frame split for one imported row. */
+export function processStrip(image: HTMLImageElement, opt: StripOptions): { frames: Img[]; pixelArt: boolean; notes: string[] } {
+  const notes: string[] = [];
+  let c = document.createElement("canvas");
+  c.width = image.naturalWidth; c.height = image.naturalHeight;
+  c.getContext("2d")!.drawImage(image, 0, 0);
+  let img = toImg(c);
+  const bg = chromaKey(img, opt.key);
+  if (bg !== "none") notes.push(bg === "keyed" ? "background keyed out" : "background removed");
+  let pixelArt = false;
+  if (opt.clean) {
+    const block = detectBlock(img);
+    if (block) {
+      img = downsampleBlocks(img, block.n, block.ox, block.oy);
+      pixelArt = true;
+      notes.push(`restored pixel art (${block.n}× blocks)`);
+    } else if (img.h > STRIP_MAX_H) {
+      c = shrink(toCanvas(img), STRIP_MAX_H);
+      img = toImg(c);
+      notes.push(`scaled to ${img.h}px tall`);
+    }
+  }
+  const n = opt.frames > 0 ? opt.frames : detectFrameCount(img);
+  notes.push(`${n} frame${n === 1 ? "" : "s"}`);
+  return { frames: splitStrip(img, n), pixelArt, notes };
+}
+
+/** Every animation of a character as separate frame images (so the sheet can be re-packed). */
+function sheetAnims(image: HTMLImageElement, cfg: SpriteConfig): StripAnim[] {
+  const c = document.createElement("canvas");
+  c.width = image.naturalWidth; c.height = image.naturalHeight;
+  c.getContext("2d")!.drawImage(image, 0, 0);
+  const sheet = toImg(c);
+  const cols = Math.max(1, Math.floor(sheet.w / cfg.frameWidth));
+  return Object.keys(cfg.animations).map((name) => {
+    const a = resolveAnim({ ...cfg, states: {} }, `custom:${name}`, null)!;
+    const frames = a.frames.map((i) => {
+      const f = newImg(cfg.frameWidth, cfg.frameHeight);
+      const ox = (i % cols) * cfg.frameWidth, oy = Math.floor(i / cols) * cfg.frameHeight;
+      for (let y = 0; y < f.h && oy + y < sheet.h; y++) {
+        const w = Math.max(0, Math.min(f.w, sheet.w - ox));
+        f.d.set(sheet.d.subarray(((oy + y) * sheet.w + ox) * 4, ((oy + y) * sheet.w + ox + w) * 4), y * f.w * 4);
+      }
+      return f;
+    });
+    return { name, frames, fps: a.fps, loop: a.loop };
+  });
+}
+
+/**
+ * Put `anim` into the character as the animation for `state` (replacing an older row for it) and
+ * re-pack the sheet. `base` is the current character, or null for a brand-new one.
+ */
+export function mergeStrip(
+  base: { cfg: SpriteConfig; img: HTMLImageElement } | null, state: string, anim: StripAnim, name: string, pixelArt: boolean,
+): { png: string; config: SpriteConfig } {
+  const kept = base ? sheetAnims(base.img, base.cfg).filter((a) => a.name !== anim.name) : [];
+  const packed = composeSheet([...kept, anim]);
+  const states = { ...(base?.cfg.states ?? {}), [state]: anim.name };
+  const config = normalizeConfig({
+    ...(base?.cfg ?? { renderScale: 1, smooth: !pixelArt, quirks: [] }),
+    name, source: "strips",
+    frameWidth: packed.frameWidth, frameHeight: packed.frameHeight, animations: packed.animations, states,
+  });
+  return { png: toCanvas(packed.sheet).toDataURL("image/png"), config };
 }
 
 export { alphaOf, newImg };

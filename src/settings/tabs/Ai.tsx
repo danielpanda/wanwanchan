@@ -19,7 +19,7 @@ const CONNECT = [
 ];
 
 const SUPPORT: Record<AgentId, string> = {
-  claude: "Full: Claude Code hooks report prompt submit, tool use, notifications and stop.",
+  claude: "Full: prompt submit, tool use, permission prompts and questions (with the tool / question in the bubble), stop and API failures.",
   codex: "Partial: Codex CLI's `notify` setting reports turn completion only (no thinking/working events).",
   cursor: "Partial: Cursor hooks (hooks.json) report prompt submit, file edits and stop. Check Cursor's docs for your version.",
   antigravity: "None documented: no hook/event API we could rely on. Use the generic helper from your own scripts, or the simulator.",
@@ -35,7 +35,10 @@ function snippet(agent: AgentId, helper: string, port: number): string {
       const hook = (ev: string) => [{ hooks: [{ type: "command", command: `${h} claude ${ev}` }] }];
       const m = (ev: string) => [{ matcher: "*", hooks: [{ type: "command", command: `${h} claude ${ev}` }] }];
       return `// merge into ~/.claude/settings.json\n` + JSON.stringify({
-        hooks: { UserPromptSubmit: hook("UserPromptSubmit"), PreToolUse: m("PreToolUse"), PostToolUse: m("PostToolUse"), Notification: hook("Notification"), Stop: hook("Stop") },
+        hooks: {
+          UserPromptSubmit: hook("UserPromptSubmit"), PreToolUse: m("PreToolUse"), PostToolUse: m("PostToolUse"), Notification: hook("Notification"),
+          PermissionRequest: hook("PermissionRequest"), Stop: hook("Stop"), StopFailure: hook("StopFailure"), SessionEnd: hook("SessionEnd"),
+        },
       }, null, 2);
     }
     case "codex":

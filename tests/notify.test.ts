@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { inQuiet, nextDue, parseHM, quietEnd, sig } from "../src/pet/reminders";
-import { pick, reminderText, timeGreeting } from "../src/shared/messages";
+import { pick, reminderText, timeGreeting, withName } from "../src/shared/messages";
 import { fmtDuration, Notifier, type Host, type PresentOpts } from "../src/pet/notify";
 import { DEFAULT_SETTINGS, withDefaults, type Reminder, type Settings } from "../src/shared/types";
 
@@ -59,14 +59,17 @@ describe("messages", () => {
 
 function harness(patch: Partial<Settings["notify"]> = {}) {
   const shown: { text: string; o: PresentOpts }[] = [];
-  let typing = false;
+  const disabled: string[] = [];
+  let typing = false, peeking = false;
   const settings: Settings = withDefaults({ ...DEFAULT_SETTINGS, notify: { ...DEFAULT_SETTINGS.notify, chatter: false, ...patch } });
   const host: Host = {
     settings: () => settings, typing: () => typing,
     present: (text, o) => shown.push({ text, o }),
     close: () => { shown[shown.length - 1]?.o.onClose(); },
+    peeking: () => peeking,
+    disableReminder: (id) => disabled.push(id),
   };
-  return { n: new Notifier(host), shown, setTyping: (v: boolean) => (typing = v) };
+  return { n: new Notifier(host), shown, disabled, setTyping: (v: boolean) => (typing = v), setPeeking: (v: boolean) => (peeking = v) };
 }
 
 describe("Notifier", () => {
@@ -98,6 +101,42 @@ describe("Notifier", () => {
   });
 });
 
+describe("calmer bubbles", () => {
+  it("addresses the user by name", () => {
+    expect(withName("💧 Minum dulu yuk", "Dani")).toBe("💧 Dani, minum dulu yuk");
+    expect(withName("Selamat pagi!", "Dani")).toBe("Dani, selamat pagi!");
+    expect(withName("I'll keep you company", "Dani")).toBe("Dani, I'll keep you company");
+    expect(withName("Hi", "  ")).toBe("Hi");
+  });
+  it("peek mode mutes chatter but not agent news or notices", () => {
+    const h = harness();
+    h.setPeeking(true);
+    h.n.welcomeBack(); h.n.purr();
+    expect(h.shown).toHaveLength(0);
+    h.n.agent("completed", "claude");
+    expect(h.shown).toHaveLength(1);
+    h.shown[0].o.onClose();
+    h.n.notice("🍅 break");
+    expect(h.shown[1].o.buttons).toHaveLength(1);
+  });
+  it("chatter has a long cooldown", () => {
+    const h = harness();
+    h.n.chat("a"); h.shown[0].o.onClose();
+    h.n.chat("b");
+    expect(h.shown).toHaveLength(1);
+  });
+  it("a one-shot message reminder fires once and switches itself off", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(10));
+    const h = harness({ reminders: [rem({ id: "m1", kind: "once", time: "10:30", text: "Call mom", emoji: "📞" })] });
+    h.n.sync();
+    vi.advanceTimersByTime(31 * 60_000);
+    expect(h.shown[0].text).toBe("📞 Call mom");
+    expect(h.disabled).toEqual(["m1"]);
+    vi.useRealTimers();
+  });
+});
+
 describe("agent bubbles", () => {
   it("formats durations", () => {
     expect(fmtDuration(42)).toBe("42s");
@@ -108,6 +147,53 @@ describe("agent bubbles", () => {
     const { n, shown } = harness();
     n.agent("completed", "claude", 134);
     expect(shown[0].text).toMatch(/Claude Code \(2m 14s\)/);
+  });
+  it("is never dropped: waits behind a reminder, pushes chatter aside", () => {
+    const h = harness();
+    h.n.say("busy");
+    h.n.agent("waiting", "claude");
+    expect(h.shown).toHaveLength(1);
+    h.shown[0].o.onClose();
+    expect(h.shown[1].text).toMatch(/Claude Code/);
+    const c = harness();
+    c.n.welcomeBack();
+    c.n.agent("completed", "claude");
+    expect(c.shown.map((s) => s.text)[1]).toMatch(/Claude Code/);
+  });
+  it("ignores quiet hours, has an OK button, and shows the detail", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(at(23));
+    const h = harness({ quiet: { enabled: true, from: "22:00", to: "07:00" }, sound: true });
+    h.n.agent("waiting", "claude", undefined, "🔐 Bash: npm publish");
+    expect(h.shown[0].text).toMatch(/\n🔐 Bash: npm publish$/);
+    expect(h.shown[0].o.buttons).toHaveLength(1);
+    expect(h.shown[0].o.sound).toBe(true);
+    vi.useRealTimers();
+  });
+  it("a waiting bubble sticks until the agent moves on", () => {
+    const h = harness();
+    h.n.agent("waiting", "claude");
+    expect(h.shown[0].o.seconds).toBeGreaterThan(600);
+    let closed = false;
+    const onClose = h.shown[0].o.onClose;
+    h.shown[0].o.onClose = () => { closed = true; onClose(); };
+    h.n.agentResumed("cursor");
+    expect(closed).toBe(false);
+    h.n.agentResumed("claude");
+    expect(closed).toBe(true);
+  });
+  it("newer news from the same agent replaces the old bubble", () => {
+    const h = harness();
+    h.n.agent("waiting", "claude");
+    h.n.agent("completed", "claude", 120);
+    expect(h.shown).toHaveLength(2);
+    expect(h.shown[1].text).toMatch(/\(2m 0s\)/);
+    expect(h.shown[1].o.seconds).toBeLessThan(600);
+  });
+  it("respects the agent reactions toggle", () => {
+    const h = harness({ agentReactions: false });
+    h.n.agent("waiting", "claude");
+    expect(h.shown).toHaveLength(0);
   });
   it("omits the duration for quick tasks and for waiting", () => {
     const a = harness(); a.n.agent("completed", "cursor", 5);

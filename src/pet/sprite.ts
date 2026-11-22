@@ -1,5 +1,8 @@
 import type { AnimationDef, PetState, SpriteConfig } from "../shared/types";
-import { STATES } from "../shared/types";
+import { REQUIRED_STATES, STATES } from "../shared/types";
+
+/** States that borrow a related animation before falling back to idle. */
+const FALLBACK: Partial<Record<PetState, PetState>> = { scroll: "typing", peek: "sit" };
 
 export interface ResolvedAnim {
   name: string;
@@ -44,6 +47,7 @@ export function normalizeConfig(raw: unknown): SpriteConfig {
   return {
     name: String(r.name ?? "Custom").slice(0, 60), frameWidth, frameHeight, animations, states,
     renderScale, smooth: typeof r.smooth === "boolean" ? r.smooth : renderScale < 0.5, quirks,
+    ...(r.source === "strips" ? { source: "strips" as const } : {}),
   };
 }
 
@@ -54,9 +58,10 @@ export function resolveAnim(cfg: SpriteConfig, state: string, fpsOverride: numbe
     return resolveAnim({ ...cfg, states: { idle: n } }, "idle", fpsOverride);
   }
   const st = state as PetState;
+  const own = (s: string) => cfg.states[s as PetState] ?? (cfg.animations[s] ? s : undefined);
   const name =
-    cfg.states[st] ??
-    (cfg.animations[state] ? state : undefined) ??
+    own(st) ??
+    (FALLBACK[st] ? own(FALLBACK[st]!) : undefined) ??
     (state === "blink" ? undefined : cfg.states.idle ?? (cfg.animations.idle ? "idle" : Object.keys(cfg.animations)[0]));
   if (!name || !cfg.animations[name]) return null;
   const a = cfg.animations[name];
@@ -67,6 +72,11 @@ export function resolveAnim(cfg: SpriteConfig, state: string, fpsOverride: numbe
 export function hasAnim(cfg: SpriteConfig, state: string): boolean {
   if (state.startsWith("custom:")) return !!cfg.animations[state.slice(7)];
   return !!(cfg.states[state as PetState] || cfg.animations[state]);
+}
+
+/** Required states that still have no animation of their own (empty = the character is usable). */
+export function missingStates(cfg: SpriteConfig): PetState[] {
+  return REQUIRED_STATES.filter((s) => !hasAnim(cfg, s));
 }
 
 /** Auto-split a sheet into one animation per row (row0, row1, ...). */

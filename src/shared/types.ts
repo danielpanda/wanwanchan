@@ -1,9 +1,12 @@
 export const STATES = [
   "idle", "blink", "walk", "run", "sit", "sleep", "look",
   "typing", "jump", "happy", "thinking", "drag", "drop", "error",
-  "groom", "stretch", "yawn", "wiggle",
+  "groom", "stretch", "yawn", "wiggle", "scroll", "peek",
 ] as const;
 export type PetState = (typeof STATES)[number];
+
+/** A custom character can't be used until each of these states has its own animation. */
+export const REQUIRED_STATES: readonly PetState[] = ["idle", "walk", "sit", "sleep", "jump", "drag", "happy", "typing"];
 
 export const STATE_LABELS: Record<PetState, string> = {
   idle: "Idle", blink: "Blink", walk: "Walk", run: "Run", sit: "Sit", sleep: "Sleep",
@@ -11,6 +14,7 @@ export const STATE_LABELS: Record<PetState, string> = {
   happy: "Happy (done / fast typing)", thinking: "Thinking", drag: "Drag", drop: "Drop",
   error: "Error",
   groom: "Groom (idle quirk)", stretch: "Stretch (idle quirk / wake up)", yawn: "Yawn (idle quirk / before sleep)", wiggle: "Wiggle & pounce (idle quirk)",
+  scroll: "Scroll (you scroll a page)", peek: "Peek (peek mode)",
 };
 
 export const AGENTS = ["claude", "codex", "cursor", "antigravity", "opencode", "custom"] as const;
@@ -20,7 +24,8 @@ export type AgentState = "idle" | "thinking" | "working" | "waiting" | "complete
 export interface Reminder {
   id: string;
   emoji: string;
-  kind: "interval" | "daily";
+  /** "once" fires at the next `time` and then switches itself off (message reminder). */
+  kind: "interval" | "daily" | "once";
   /** Minutes between reminders (interval). */
   every: number;
   /** "HH:MM" (daily). */
@@ -44,15 +49,21 @@ export interface NotifySettings {
   praise: boolean;
   reactions: boolean;
   reminders: Reminder[];
+  /** What the pet calls you in reminders and greetings. */
+  userName: string;
+  /** Note pinned above the pet's head. */
+  pinned: string;
 }
 
+export interface PomodoroSettings { focus: number; shortBreak: number; longBreak: number; longEvery: number }
+
 export const DEFAULT_REMINDERS: Reminder[] = [
-  { id: "water", emoji: "💧", kind: "interval", every: 45, time: "", text: "", enabled: true, builtin: true },
-  { id: "eyes", emoji: "👀", kind: "interval", every: 20, time: "", text: "", enabled: false, builtin: true },
-  { id: "posture", emoji: "🧘", kind: "interval", every: 60, time: "", text: "", enabled: true, builtin: true },
-  { id: "stretch", emoji: "🙆", kind: "interval", every: 90, time: "", text: "", enabled: false, builtin: true },
-  { id: "lunch", emoji: "🍙", kind: "daily", every: 60, time: "12:00", text: "", enabled: false, builtin: true },
-  { id: "sleep", emoji: "😴", kind: "daily", every: 60, time: "23:30", text: "", enabled: false, builtin: true },
+  { id: "water", emoji: "", kind: "interval", every: 45, time: "", text: "", enabled: true, builtin: true },
+  { id: "eyes", emoji: "", kind: "interval", every: 20, time: "", text: "", enabled: false, builtin: true },
+  { id: "posture", emoji: "", kind: "interval", every: 60, time: "", text: "", enabled: true, builtin: true },
+  { id: "stretch", emoji: "", kind: "interval", every: 60, time: "", text: "", enabled: true, builtin: true },
+  { id: "lunch", emoji: "", kind: "daily", every: 60, time: "12:00", text: "", enabled: false, builtin: true },
+  { id: "sleep", emoji: "", kind: "daily", every: 60, time: "23:30", text: "", enabled: false, builtin: true },
 ];
 
 export const DEFAULT_NOTIFY: NotifySettings = {
@@ -62,13 +73,18 @@ export const DEFAULT_NOTIFY: NotifySettings = {
   sound: false,
   quiet: { enabled: false, from: "22:00", to: "07:00" },
   greetings: true,
-  chatter: true,
-  chatterEvery: 25,
+  // Off by default: bubbles are kept for things that matter (reminders, pomodoro, agents).
+  chatter: false,
+  chatterEvery: 45,
   agentReactions: true,
   praise: true,
   reactions: true,
   reminders: DEFAULT_REMINDERS,
+  userName: "",
+  pinned: "",
 };
+
+export const DEFAULT_POMODORO: PomodoroSettings = { focus: 25, shortBreak: 5, longBreak: 15, longEvery: 4 };
 
 export interface Settings {
   enabled: boolean;
@@ -88,8 +104,11 @@ export interface Settings {
   wanderEvery: number;
   sitAfter: number;
   sleepAfter: number;
+  /** Hide at the screen edge and only come out for reminders. */
+  peekMode: boolean;
   agent: { enabled: boolean; port: number; agents: Record<AgentId, boolean> };
   notify: NotifySettings;
+  pomodoro: PomodoroSettings;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -110,12 +129,14 @@ export const DEFAULT_SETTINGS: Settings = {
   wanderEvery: 15,
   sitAfter: 45,
   sleepAfter: 180,
+  peekMode: false,
   agent: {
     enabled: false,
     port: 47321,
     agents: { claude: true, codex: true, cursor: true, antigravity: true, opencode: true, custom: true },
   },
   notify: DEFAULT_NOTIFY,
+  pomodoro: DEFAULT_POMODORO,
 };
 
 export function withDefaults(raw: Partial<Settings> | null | undefined): Settings {
@@ -135,6 +156,7 @@ export function withDefaults(raw: Partial<Settings> | null | undefined): Setting
       quiet: { ...DEFAULT_NOTIFY.quiet, ...(r.notify?.quiet ?? {}) },
       reminders: Array.isArray(r.notify?.reminders) ? r.notify!.reminders : DEFAULT_NOTIFY.reminders,
     },
+    pomodoro: { ...DEFAULT_POMODORO, ...(r.pomodoro ?? {}) },
   };
 }
 
@@ -161,4 +183,6 @@ export interface SpriteConfig {
   smooth: boolean;
   /** Extra animation names to play at random while idle. */
   quirks: string[];
+  /** "strips": built one row per state (the state-by-state importer). */
+  source?: "strips";
 }

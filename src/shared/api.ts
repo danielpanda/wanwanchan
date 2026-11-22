@@ -32,3 +32,6 @@ export const requestKeyboardPermission = () => invoke<boolean>("request_keyboard
 export const openPrivacySettings = () => invoke<void>("open_privacy_settings");
 export const saveCharacterImage = (id: string, dataUrl: string) => invoke<void>("save_character_image", { id, dataUrl });
 export const loadCharacterOriginal = (id: string) => invoke<string>("load_character_original", { id });
+export const readImageFile = (path: string) => invoke<string>("read_image_file", { path });
+export const createCharacter = (name: string, dataUrl: string, config: unknown) =>
+  invoke<string>("create_character", { name, dataUrl, config });

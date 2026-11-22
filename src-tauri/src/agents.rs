@@ -10,9 +10,13 @@ use tiny_http::{Response, Server};
 
 pub type ServerHandle = Arc<Server>;
 
+fn squash(raw: &str) -> String {
+    raw.chars().filter(|c| !matches!(c, '-' | '_' | '.' | ' ')).collect::<String>().to_lowercase()
+}
+
 /// Normalized agent states: idle | thinking | working | waiting | completed | error
 pub fn normalize(raw: &str) -> Option<&'static str> {
-    let key: String = raw.chars().filter(|c| !matches!(c, '-' | '_' | '.' | ' ')).collect::<String>().to_lowercase();
+    let key = squash(raw);
     Some(match key.as_str() {
         "idle" | "reset" | "sessionend" | "sessionstart" | "sessiondeleted" => "idle",
         "thinking" | "userpromptsubmit" | "beforesubmitprompt" | "posttooluse" | "sessionbusy" | "sessionstatusbusy" => "thinking",
@@ -32,11 +36,56 @@ fn query_param(url: &str, key: &str) -> Option<String> {
     })
 }
 
-pub fn dispatch(app: &AppHandle, agent: &str, raw: &str) -> Result<&'static str, String> {
-    let state = normalize(raw).ok_or_else(|| format!("unknown event '{raw}'"))?;
+/// One line of context for the bubble: whitespace collapsed, at most `n` chars.
+fn short(s: &str, n: usize) -> String {
+    let s = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if s.chars().count() <= n { s } else { s.chars().take(n - 1).collect::<String>() + "…" }
+}
+
+/// Refines a raw event with its hook payload (Claude Code JSON on stdin) into a state plus an
+/// optional bubble detail. `"ignored"` = a known event that should not move the pet.
+/// Facts from https://code.claude.com/docs/en/hooks: AskUserQuestion / ExitPlanMode only show up as
+/// PreToolUse; Notification carries `notification_type`, most of which are not waiting on the user.
+pub fn classify(raw: &str, p: &Value) -> Option<(&'static str, Option<String>)> {
+    let get = |k: &str| p.get(k).and_then(Value::as_str);
+    let tool = get("tool_name").unwrap_or("");
+    let input = p.get("tool_input").unwrap_or(&Value::Null);
+    let arg = |k: &str| input.get(k).and_then(Value::as_str);
+    match squash(raw).as_str() {
+        "pretooluse" if tool == "AskUserQuestion" => {
+            let q = input.pointer("/questions/0/question").and_then(Value::as_str).unwrap_or("?");
+            return Some(("waiting", Some(short(q, 70))));
+        }
+        "pretooluse" if tool == "ExitPlanMode" => return Some(("waiting", Some("Plan".into()))),
+        "permissionrequest" if !tool.is_empty() => {
+            let subject = arg("command")
+                .or_else(|| arg("file_path").map(|f| f.rsplit(['/', '\\']).next().unwrap_or(f)))
+                .or_else(|| arg("url"))
+                .or_else(|| arg("pattern"));
+            let d = match subject { Some(x) => format!("{tool}: {}", short(x, 40)), None => tool.to_string() };
+            return Some(("waiting", Some(d)));
+        }
+        "notification" => {
+            return match get("notification_type") {
+                None | Some("permission_prompt" | "elicitation_dialog" | "elicitation_url_dialog" | "agent_needs_input") => {
+                    Some(("waiting", get("message").map(|m| short(m, 70))))
+                }
+                Some(_) => Some(("ignored", None)), // idle_prompt, auth_success, agent_completed, ...
+            };
+        }
+        _ => {}
+    }
+    normalize(raw).map(|s| (s, None))
+}
+
+pub fn dispatch(app: &AppHandle, agent: &str, raw: &str, payload: &Value) -> Result<&'static str, String> {
+    let (state, detail) = classify(raw, payload).ok_or_else(|| format!("unknown event '{raw}'"))?;
+    if state == "ignored" {
+        return Ok(state);
+    }
     let agent: String = agent.chars().filter(|c| c.is_ascii_alphanumeric()).take(24).collect();
     let agent = if agent.is_empty() { "custom".to_string() } else { agent.to_lowercase() };
-    let _ = app.emit("agent-event", json!({ "agent": agent, "state": state, "raw": raw }));
+    let _ = app.emit("agent-event", json!({ "agent": agent, "state": state, "raw": raw, "detail": detail }));
     Ok(state)
 }
 
@@ -59,18 +108,18 @@ pub fn start(app: AppHandle, port: u16) -> Result<ServerHandle, String> {
                 }
                 let mut agent = query_param(&url, "agent");
                 let mut ev = query_param(&url, "event").or_else(|| query_param(&url, "state"));
-                if ev.is_none() {
-                    let mut body = String::new();
-                    let _ = req.as_reader().take(4096).read_to_string(&mut body);
-                    if let Ok(v) = serde_json::from_str::<Value>(&body) {
-                        agent = agent.or_else(|| v.get("agent").and_then(Value::as_str).map(String::from));
-                        ev = ["event", "state", "hook_event_name", "type"]
-                            .iter()
-                            .find_map(|k| v.get(*k).and_then(Value::as_str).map(String::from));
-                    }
-                }
+                // body: a custom {"agent","event"} call, or the hook payload piped through by the helper
+                let mut body = String::new();
+                let _ = req.as_reader().take(1 << 20).read_to_string(&mut body);
+                let payload = serde_json::from_str::<Value>(&body).unwrap_or(Value::Null);
+                agent = agent.or_else(|| payload.get("agent").and_then(Value::as_str).map(String::from));
+                ev = ev.or_else(|| {
+                    ["event", "state", "hook_event_name", "type"]
+                        .iter()
+                        .find_map(|k| payload.get(*k).and_then(Value::as_str).map(String::from))
+                });
                 let res = match ev {
-                    Some(e) => dispatch(&app, agent.as_deref().unwrap_or("custom"), &e),
+                    Some(e) => dispatch(&app, agent.as_deref().unwrap_or("custom"), &e, &payload),
                     None => Err("missing event".into()),
                 };
                 let _ = match res {
@@ -99,6 +148,12 @@ AGENT="$1"; EVENT="$2"
 if [ "$EVENT" = "-" ]; then
   for last; do :; done
   EVENT=$(printf '%s' "$last" | sed -n 's/.*"type" *: *"\([^"]*\)".*/\1/p')
+fi
+if [ "$AGENT" = "claude" ]; then
+  # Claude Code pipes the hook JSON on stdin; forward it so the pet knows which tool / question.
+  head -c 1048576 2>/dev/null | curl -s -m 1 -X POST -H 'Content-Type: application/json' --data-binary @- \
+    "http://127.0.0.1:${PORT}/event?agent=claude&event=${EVENT}" >/dev/null 2>&1
+  exit 0
 fi
 if [ "$AGENT" = "cursor" ]; then
   # Cursor hooks may gate actions on a JSON reply; always allow. A failed stop reports an error.
@@ -165,6 +220,25 @@ mod tests {
         assert_eq!(normalize("PermissionRequest"), Some("waiting"));
         assert_eq!(normalize("StopFailure"), Some("error"));
         assert_eq!(normalize("bogus"), None);
+    }
+    #[test]
+    fn classifies_claude_payloads() {
+        let ask = json!({"tool_name": "AskUserQuestion", "tool_input": {"questions": [{"question": "Which  DB\nshould we use?"}]}});
+        assert_eq!(classify("PreToolUse", &ask), Some(("waiting", Some("Which DB should we use?".into()))));
+        assert_eq!(classify("PreToolUse", &json!({"tool_name": "ExitPlanMode"})).unwrap().0, "waiting");
+        assert_eq!(classify("PreToolUse", &json!({"tool_name": "Bash"})), Some(("working", None)));
+        let perm = json!({"tool_name": "Bash", "tool_input": {"command": "npm publish --access public"}});
+        assert_eq!(classify("PermissionRequest", &perm), Some(("waiting", Some("Bash: npm publish --access public".into()))));
+        let edit = json!({"tool_name": "Edit", "tool_input": {"file_path": "/a/b/main.rs"}});
+        assert_eq!(classify("PermissionRequest", &edit).unwrap().1.as_deref(), Some("Edit: main.rs"));
+        assert_eq!(classify("PermissionRequest", &Value::Null), Some(("waiting", None)));
+        let n = |t: &str| json!({"notification_type": t, "message": "Claude needs your permission"});
+        assert_eq!(classify("Notification", &n("permission_prompt")).unwrap().0, "waiting");
+        assert_eq!(classify("Notification", &n("idle_prompt")), Some(("ignored", None)));
+        assert_eq!(classify("Notification", &n("auth_success")), Some(("ignored", None)));
+        assert_eq!(classify("Notification", &Value::Null), Some(("waiting", None)));
+        assert_eq!(classify("bogus", &Value::Null), None);
+        assert_eq!(short(&"x".repeat(100), 10).chars().count(), 10);
     }
     #[test]
     fn parses_query() {

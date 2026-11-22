@@ -43,7 +43,7 @@ pub fn png_size(bytes: &[u8]) -> Result<(u32, u32), String> {
 }
 
 pub fn list(app: &AppHandle) -> Result<Vec<Value>, String> {
-    let mut out = vec![json!({"id": "cat", "name": "Pixel Cat", "builtin": true})];
+    let mut out = vec![json!({"id": "cat", "name": "Pixel Frenchie", "builtin": true})];
     for entry in fs::read_dir(dir(app)?).map_err(|e| e.to_string())?.flatten() {
         let p = entry.path();
         let id = entry.file_name().to_string_lossy().to_string();
@@ -80,11 +80,7 @@ pub fn import(app: &AppHandle, path: &str, name: &str) -> Result<Value, String> 
     }
     let bytes = fs::read(&src).map_err(|e| e.to_string())?;
     let (w, h) = png_size(&bytes)?;
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() % 100000)
-        .unwrap_or(0);
-    let id = format!("{}-{}", slug(name), stamp);
+    let id = new_id(name);
     let d = dir(app)?.join(&id);
     fs::create_dir_all(&d).map_err(|e| e.to_string())?;
     fs::write(d.join("sheet.png"), &bytes).map_err(|e| e.to_string())?;
@@ -99,6 +95,14 @@ pub fn import(app: &AppHandle, path: &str, name: &str) -> Result<Value, String> 
     });
     fs::write(d.join("sprite.json"), serde_json::to_string_pretty(&config).unwrap()).map_err(|e| e.to_string())?;
     Ok(json!({"id": id, "width": w, "height": h}))
+}
+
+fn new_id(name: &str) -> String {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() % 100000)
+        .unwrap_or(0);
+    format!("{}-{}", slug(name), stamp)
 }
 
 fn decode_data_url(data_url: &str) -> Result<Vec<u8>, String> {
@@ -156,6 +160,64 @@ pub fn delete(app: &AppHandle, id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Returns (width, height) from a JPEG's SOF marker, or an error if it is not a sane JPEG.
+pub fn jpeg_size(bytes: &[u8]) -> Result<(u32, u32), String> {
+    if bytes.len() < 4 || bytes[..3] != [0xFF, 0xD8, 0xFF] {
+        return Err("Not a valid JPEG file".into());
+    }
+    let mut i = 2;
+    while i + 9 < bytes.len() {
+        if bytes[i] != 0xFF {
+            i += 1;
+            continue;
+        }
+        let m = bytes[i + 1];
+        // SOF0..SOF15 carry the size (C4 = DHT, C8 = JPG, CC = DAC are not frames)
+        if (0xC0..=0xCF).contains(&m) && m != 0xC4 && m != 0xC8 && m != 0xCC {
+            let h = u16::from_be_bytes([bytes[i + 5], bytes[i + 6]]) as u32;
+            let w = u16::from_be_bytes([bytes[i + 7], bytes[i + 8]]) as u32;
+            if w == 0 || h == 0 || w > MAX_DIM || h > MAX_DIM {
+                return Err(format!("Image size {w}x{h} is not supported (max {MAX_DIM}px)"));
+            }
+            return Ok((w, h));
+        }
+        if m == 0xD8 || m == 0x01 || (0xD0..=0xD7).contains(&m) || m == 0xFF {
+            i += if m == 0xFF { 1 } else { 2 };
+            continue;
+        }
+        i += 2 + u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]) as usize;
+    }
+    Err("Not a valid JPEG file".into())
+}
+
+/// A user-picked PNG or JPEG (one animation row) as a data URL, for processing in the settings window.
+pub fn read_image(path: &str) -> Result<String, String> {
+    let p = PathBuf::from(path);
+    let meta = fs::metadata(&p).map_err(|e| e.to_string())?;
+    if !meta.is_file() || meta.len() > MAX_PNG_BYTES {
+        return Err("File is missing or larger than 20 MB".into());
+    }
+    let bytes = fs::read(&p).map_err(|e| e.to_string())?;
+    let mime = if png_size(&bytes).is_ok() {
+        "image/png"
+    } else {
+        jpeg_size(&bytes).map_err(|_| "Not a PNG or JPEG image".to_string())?;
+        "image/jpeg"
+    };
+    Ok(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
+}
+
+/// New character from an already processed sheet (the row importer builds it in the settings window).
+pub fn create(app: &AppHandle, name: &str, data_url: &str, config: &Value) -> Result<String, String> {
+    let png = decode_data_url(data_url)?;
+    let id = new_id(name);
+    let d = dir(app)?.join(&id);
+    fs::create_dir_all(&d).map_err(|e| e.to_string())?;
+    fs::write(d.join("sheet.png"), png).map_err(|e| e.to_string())?;
+    fs::write(d.join("sprite.json"), serde_json::to_string_pretty(config).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
 pub fn read_text(path: &str) -> Result<String, String> {
     let p = PathBuf::from(path);
     let meta = fs::metadata(&p).map_err(|e| e.to_string())?;
@@ -168,6 +230,14 @@ pub fn read_text(path: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reads_jpeg_size() {
+        // SOI, APP0 (len 4), SOF0: len 17, precision 8, h=256, w=1024
+        let j = [0xFF, 0xD8, 0xFF, 0xE0, 0, 4, 0, 0, 0xFF, 0xC0, 0, 17, 8, 1, 0, 4, 0, 3, 0, 0, 0, 0];
+        assert_eq!(jpeg_size(&j).unwrap(), (1024, 256));
+        assert!(jpeg_size(b"not a jpeg at all").is_err());
+    }
+
     #[test]
     fn rejects_non_png() {
         assert!(png_size(b"hello world, not a png at all!").is_err());

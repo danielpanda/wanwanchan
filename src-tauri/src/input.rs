@@ -2,6 +2,7 @@
 //!
 //! * Mouse-move monitor: needs no permission. Emits throttled `cursor` events (window-local
 //!   logical coordinates) so the pet can look at the cursor and hit-test for click-through.
+//! * Scroll monitor: no permission. Emits a throttled, empty `scroll` event (direction/amount unused).
 //! * Key monitor: needs "Input Monitoring". We only *count* key events and emit an empty
 //!   `key` event. The event's characters/key codes are never read.
 
@@ -39,6 +40,7 @@ mod mac {
     thread_local! {
         static MOUSE: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
         static KEY: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
+        static SCROLL: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
     }
 
     pub fn set_mouse(app: &AppHandle, on: bool) {
@@ -54,6 +56,17 @@ mod mac {
                     NSEventMask::MouseMoved | NSEventMask::LeftMouseDragged,
                     &block,
                 );
+            }
+        });
+        SCROLL.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            if let Some(m) = slot.take() {
+                unsafe { NSEvent::removeMonitor(&m) };
+            }
+            if on {
+                let app = app.clone();
+                let block = RcBlock::new(move |_e: NonNull<NSEvent>| emit_scroll(&app));
+                *slot = NSEvent::addGlobalMonitorForEventsMatchingMask_handler(NSEventMask::ScrollWheel, &block);
             }
         });
     }
@@ -79,6 +92,7 @@ mod mac {
 }
 
 static LAST_EMIT: Mutex<Option<Instant>> = Mutex::new(None);
+static LAST_SCROLL: Mutex<Option<Instant>> = Mutex::new(None);
 static TRAILING_PENDING: AtomicBool = AtomicBool::new(false);
 const MIN_GAP: Duration = Duration::from_millis(33);
 
@@ -109,6 +123,21 @@ fn emit_cursor(app: &AppHandle) {
             *LAST_EMIT.lock().unwrap() = Some(Instant::now());
             send_cursor(&app);
         });
+    }
+}
+
+/// Scroll events arrive at ~60/s; the pet only needs to know scrolling is going on.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn emit_scroll(app: &AppHandle) {
+    let now = Instant::now();
+    let mut last = LAST_SCROLL.lock().unwrap();
+    if last.map(|t| now.duration_since(t) < Duration::from_millis(250)).unwrap_or(false) {
+        return;
+    }
+    *last = Some(now);
+    drop(last);
+    if let Some(w) = app.get_webview_window("pet") {
+        let _ = w.emit("scroll", ());
     }
 }
 

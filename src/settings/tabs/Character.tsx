@@ -2,14 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   deleteCharacter, importCharacter, listCharacters, loadUserCharacter, openCharactersDir, readTextFile,
-  saveCharacterConfig, saveCharacterImage, loadCharacterOriginal, type CharacterInfo,
+  saveCharacterConfig, saveCharacterImage, loadCharacterOriginal, readImageFile, createCharacter, type CharacterInfo,
 } from "../../shared/api";
-import { STATES, STATE_LABELS, type AnimationDef, type PetState, type SpriteConfig } from "../../shared/types";
+import { REQUIRED_STATES, STATES, STATE_LABELS, type AnimationDef, type PetState, type SpriteConfig } from "../../shared/types";
 import { alphaOf, animationsFromGuess, guessGrid, suggestRender } from "../../shared/detect";
-import { gridAnimations, loadImage, normalizeConfig, resolveAnim, drawFrame, type LoadedSprite } from "../../pet/sprite";
-import { processImport, type ImportOptions } from "../../shared/imageio";
+import { gridAnimations, loadImage, missingStates, normalizeConfig, resolveAnim, drawFrame, type LoadedSprite } from "../../pet/sprite";
+import { mergeStrip, processImport, processStrip, scaleFor, type ImportOptions, type StripOptions } from "../../shared/imageio";
+import { defaultTiming } from "../../shared/strip";
 import { Group, Page, Row, Select, Slider, Toggle } from "../ui";
 import type { TabProps } from "./types";
+import { RowGuide } from "./RowGuide";
 
 interface Loaded { cfg: SpriteConfig; img: HTMLImageElement }
 
@@ -85,6 +87,8 @@ export function CharacterTab({ settings: s, update }: TabProps) {
   const [previewState, setPreviewState] = useState<PetState>("idle");
   const [msg, setMsg] = useState("");
   const [opt, setOpt] = useState<ImportOptions>({ clean: true, animate: true });
+  const [strip, setStrip] = useState<StripOptions>({ key: "auto", frames: 0, clean: true });
+  const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
   const [jsonText, setJsonText] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
@@ -133,6 +137,54 @@ export function CharacterTab({ settings: s, update }: TabProps) {
     setBusy(false);
   }
 
+  const pickRow = async () => {
+    const path = await open({ multiple: false, filters: [{ name: "PNG or JPEG image", extensions: ["png", "jpg", "jpeg"] }] });
+    return typeof path === "string" ? path : null;
+  };
+
+  /** Clean + split one row into the animation for `state`. `base` null = brand-new character. */
+  async function buildRow(state: PetState, path: string, base: Loaded | null, name: string) {
+    const r = processStrip(await loadImage(await readImageFile(path)), strip);
+    return { r, res: mergeStrip(base, state, { name: state, frames: r.frames, ...defaultTiming(state) }, name, r.pixelArt) };
+  }
+
+  function reportRow(state: PetState, r: { notes: string[] }, config: SpriteConfig) {
+    const left = missingStates(config);
+    setMsg(`${STATE_LABELS[state]}: ${r.notes.join(", ")}. ${left.length ? `Still needed: ${left.map((m) => STATE_LABELS[m]).join(", ")}.` : "All required states done, the character is live!"}`);
+    setPreviewState(state);
+  }
+
+  async function newCharacter() {
+    const path = await pickRow();
+    if (!path) return;
+    setBusy(true);
+    try {
+      const name = newName.trim() || (path.split("/").pop() ?? "character").replace(/\.(png|jpe?g)$/i, "").slice(0, 40);
+      const { r, res } = await buildRow("idle", path, null, name);
+      const id = await createCharacter(name, res.png, res.config);
+      reportRow("idle", r, res.config);
+      await refresh();
+      setNewName("");
+      update({ character: id, scale: scaleFor(res.config.frameHeight) });
+    } catch (e) { setMsg(String(e)); }
+    setBusy(false);
+  }
+
+  async function importRow(state: PetState) {
+    if (!loaded || builtin) return;
+    const path = await pickRow();
+    if (!path) return;
+    setBusy(true);
+    try {
+      const { r, res } = await buildRow(state, path, loaded, draft?.name ?? loaded.cfg.name);
+      await saveCharacterImage(s.character, res.png);
+      await saveCharacterConfig(s.character, res.config);
+      reportRow(state, r, res.config);
+      setReloadKey((k) => k + 1);
+    } catch (e) { setMsg(String(e)); }
+    setBusy(false);
+  }
+
   async function save() {
     if (!draft) return;
     try {
@@ -149,22 +201,27 @@ export function CharacterTab({ settings: s, update }: TabProps) {
     catch (e) { setMsg(`Invalid JSON: ${e}`); }
   }
 
+  const missing = useMemo(() => (loaded && !builtin ? missingStates(loaded.cfg) : []), [loaded, builtin]);
   const animNames = useMemo(() => Object.keys(draft?.animations ?? {}), [draft]);
   const setAnim = (name: string, patch: Partial<AnimationDef>) => draft && edit({ ...draft, animations: { ...draft.animations, [name]: { ...draft.animations[name], ...patch } } });
 
   return (
     <Page title="Character">
       <Group>
-        <Row label="Character" desc="Pick the default cat or one of your own.">
+        <Row label="Character" desc="Pick the default dog or one of your own.">
           <Select value={s.character} onChange={(v) => update({ character: v })} options={chars.map((c) => ({ value: c.id, label: c.name }))} />
         </Row>
-        <Row label="Import sprite" desc="A PNG or a sprite sheet. Cleanup and animation run automatically.">
-          <button className="btn primary" disabled={busy} onClick={doImport}>{busy ? "Working…" : "Import PNG…"}</button>
+        <Row label="New character" desc="Built state by state: one PNG or JPG per animation, frames in a single row (e.g. 4 frames) on a green or magenta background. Pick the Idle row first. See the row guide below.">
+          <input className="field" style={{ width: 120 }} placeholder="Name" maxLength={40} value={newName} onChange={(e) => setNewName(e.target.value)} />
+          <button className="btn primary" disabled={busy} onClick={newCharacter}>{busy ? "Working…" : "Idle row image…"}</button>
         </Row>
-        <Row label="Import options" desc="Remove background + restore crisp pixels. Single images get generated animations (bounce, lean, squash, hearts…).">
+        <Row label="Quick import" desc="One PNG or a full sprite sheet. A single image gets generated animations (bounce, lean, squash, hearts…).">
+          <button className="btn" disabled={busy} onClick={doImport}>{busy ? "Working…" : "Import PNG…"}</button>
+        </Row>
+        <Row label="Quick import options" desc="Remove background + restore crisp pixels.">
           <label className="flex items-center gap-1 text-[12px]"><input type="checkbox" checked={opt.clean} onChange={(e) => setOpt({ ...opt, clean: e.target.checked })} />clean up</label>
           <label className="flex items-center gap-1 text-[12px]"><input type="checkbox" checked={opt.animate} onChange={(e) => setOpt({ ...opt, animate: e.target.checked })} />animate</label>
-          {!builtin && <button className="btn" disabled={busy} onClick={reprocess}>Re-process</button>}
+          {!builtin && draft?.source !== "strips" && <button className="btn" disabled={busy} onClick={reprocess}>Re-process</button>}
         </Row>
         <Row label="Characters folder" desc="Drop folders with sheet.png + sprite.json here, no app changes needed.">
           <button className="btn" onClick={() => openCharactersDir()}>Show in Finder</button>
@@ -172,6 +229,40 @@ export function CharacterTab({ settings: s, update }: TabProps) {
           {!builtin && <button className="btn" onClick={() => update({ character: "cat" })}>Reset to default</button>}
         </Row>
       </Group>
+
+      <RowGuide />
+
+      {!builtin && missing.length > 0 && (
+        <div className="mb-3 p-3 rounded-lg text-[12.5px]" style={{ background: "rgba(255,176,103,.15)", border: "1px solid rgba(255,176,103,.5)" }}>
+          <b>Not ready yet.</b> Add a row for: {missing.map((m) => STATE_LABELS[m]).join(", ")}. Until then the pet keeps showing the default cat.
+        </div>
+      )}
+
+      {!builtin && loaded && (
+        <Group title="States: one row each">
+          <Row label="Row import" desc="Background is keyed out (auto-detects green / magenta / solid colours). Frames 0 = detect from the gaps between sprites.">
+            <Select value={strip.key} onChange={(v) => setStrip({ ...strip, key: v })}
+              options={[{ value: "auto", label: "Auto background" }, { value: "green", label: "Green screen" }, { value: "magenta", label: "Magenta" }, { value: "none", label: "Already transparent" }]} />
+            <span className="text-[12px]">frames</span>
+            <input className="field" style={{ width: 50 }} type="number" min={0} max={64} value={strip.frames} onChange={(e) => setStrip({ ...strip, frames: Math.max(0, Math.min(64, Number(e.target.value) || 0)) })} />
+            <label className="flex items-center gap-1 text-[12px]"><input type="checkbox" checked={strip.clean} onChange={(e) => setStrip({ ...strip, clean: e.target.checked })} />clean up</label>
+          </Row>
+          {STATES.map((st) => {
+            const own = loaded.cfg.states[st] ?? (loaded.cfg.animations[st] ? st : undefined);
+            const a = own ? resolveAnim(loaded.cfg, st, null) : null;
+            const req = REQUIRED_STATES.includes(st);
+            const fb = !own ? resolveAnim(loaded.cfg, st, null)?.name : undefined;
+            return (
+              <Row key={st} label={`${req ? "● " : ""}${STATE_LABELS[st]}`}
+                desc={a ? `✓ ${a.frames.length} frame${a.frames.length === 1 ? "" : "s"} · ${a.fps} fps${a.loop ? "" : " · once"}` : req ? "Missing: required" : `Optional${fb ? `: uses “${fb}”` : ""}`}>
+                {a && <button className="btn" title="Preview" onClick={() => setPreviewState(st)}>▶</button>}
+                <button className={`btn${!a && req ? " primary" : ""}`} disabled={busy} onClick={() => importRow(st)}>{a ? "Replace…" : "Import row…"}</button>
+              </Row>
+            );
+          })}
+          <div className="px-3 pb-3 desc" style={{ color: "var(--sub)" }}>● required. Tip: generate every row on the same canvas size so the character keeps one scale.</div>
+        </Group>
+      )}
 
       <Group title="Appearance & motion">
         <Row label="Pixel scale"><Slider value={s.scale} min={1} max={5} step={1} format={(v) => `${v}×`} onChange={(v) => update({ scale: v })} /></Row>

@@ -15,7 +15,7 @@ export class Bubble {
     const style = document.createElement("style");
     style.textContent = `
       #pm-bubble{position:fixed;left:0;top:0;display:none;max-width:230px;min-width:70px;padding:9px 11px 8px;background:#fffdf7;color:#3b2a2f;
-        font:600 12.5px/1.35 ui-rounded,"SF Pro Rounded",-apple-system,sans-serif;border-radius:10px;border:2px solid #5c363a;
+        font:600 12.5px/1.35 ui-rounded,"SF Pro Rounded",-apple-system,sans-serif;white-space:pre-line;overflow-wrap:anywhere;border-radius:10px;border:2px solid #5c363a;
         box-shadow:0 3px 0 #5c363a,0 6px 14px rgba(0,0,0,.28);user-select:none;-webkit-user-select:none;cursor:default;will-change:transform;z-index:10}
       #pm-bubble::after{content:"";position:absolute;left:var(--tail,50%);width:9px;height:9px;background:#fffdf7;border:2px solid #5c363a;
         border-top:none;border-left:none;transform:translateX(-50%) rotate(45deg)}

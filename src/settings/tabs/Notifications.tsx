@@ -11,13 +11,20 @@ export function Notifications({ settings: s, update }: TabProps) {
   const set = (patch: Record<string, unknown>) => update({ notify: patch });
   const setReminders = (list: Reminder[]) => set({ reminders: list });
   const edit = (id: string, patch: Partial<Reminder>) => setReminders(n.reminders.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-  const preview = (r: Reminder) => petAction(`say:${reminderText(r, n.language)}`).catch(() => {});
+  const preview = (r: Reminder) =>
+    petAction(r.builtin && r.id === "stretch" ? "stretch-test" : `say:${reminderText(r, n.language)}`).catch(() => {});
 
   return (
     <Page title="Notifications">
       <Group>
-        <Row label="Speech bubbles" desc="Your character talks: reminders, greetings and little comments.">
+        <Row label="Speech bubbles" desc="Your character talks: reminders, pomodoro, agent updates. Small talk is off unless you turn it on below.">
           <Toggle value={n.enabled} onChange={(v) => set({ enabled: v })} />
+        </Row>
+        <Row label="Your name" desc="Used in reminders and greetings: “Dani, minum dulu yuk”.">
+          <input className="field" style={{ width: 160 }} placeholder="(not set)" maxLength={24} value={n.userName} onChange={(e) => set({ userName: e.target.value })} />
+        </Row>
+        <Row label="Pinned note" desc="Always shown above the character's head. Empty to hide.">
+          <input className="field" style={{ width: 220 }} placeholder="e.g. Ship v0.3 today" maxLength={60} value={n.pinned} onChange={(e) => set({ pinned: e.target.value })} />
         </Row>
         <Row label="Language">
           <Select value={n.language} onChange={(v) => set({ language: v })} options={[{ value: "id", label: "Bahasa Indonesia" }, { value: "en", label: "English" }]} />
@@ -41,8 +48,8 @@ export function Notifications({ settings: s, update }: TabProps) {
         {n.reminders.map((r) => (
           <div key={r.id}>
             <Row
-              label={`${r.emoji} ${r.builtin ? REMINDER_NAMES[n.language][r.id] ?? r.id : r.text || "Custom reminder"}`}
-              desc={r.kind === "interval" ? `Every ${fmtMin(r.every)}` : `Daily at ${r.time || "--:--"}`}
+              label={`${r.emoji ? r.emoji + " " : ""}${r.builtin ? REMINDER_NAMES[n.language][r.id] ?? r.id : r.text || "Custom reminder"}`}
+              desc={r.kind === "interval" ? `Every ${fmtMin(r.every)}` : r.kind === "once" ? `Once at ${r.time || "--:--"}${r.enabled ? "" : " (done)"}` : `Daily at ${r.time || "--:--"}`}
             >
               {r.kind === "interval" ? (
                 <Slider value={r.every} min={5} max={180} step={5} format={fmtMin} disabled={!n.enabled || !r.enabled} onChange={(v) => edit(r.id, { every: v })} />
@@ -57,7 +64,7 @@ export function Notifications({ settings: s, update }: TabProps) {
                 <div className="flex items-center gap-2 w-full">
                   <input className="field" style={{ width: 44, textAlign: "center" }} value={r.emoji} maxLength={4} onChange={(e) => edit(r.id, { emoji: e.target.value })} />
                   <input className="field flex-1" placeholder="What should I say?" value={r.text} maxLength={120} onChange={(e) => edit(r.id, { text: e.target.value })} />
-                  <Select value={r.kind} onChange={(v) => edit(r.id, { kind: v, time: v === "daily" && !r.time ? "09:00" : r.time })} options={[{ value: "interval", label: "Repeat" }, { value: "daily", label: "Daily" }]} />
+                  <Select value={r.kind} onChange={(v) => edit(r.id, { kind: v, time: v !== "interval" && !r.time ? "09:00" : r.time })} options={[{ value: "interval", label: "Repeat" }, { value: "daily", label: "Daily" }, { value: "once", label: "Once" }]} />
                   <button className="btn danger" onClick={() => setReminders(n.reminders.filter((x) => x.id !== r.id))}>✕</button>
                 </div>
               </div>
@@ -65,18 +72,23 @@ export function Notifications({ settings: s, update }: TabProps) {
           </div>
         ))}
         <div className="row">
-          <span className="desc">Add your own: stand-up, medicine, stretch, anything.</span>
-          <button className="btn primary" onClick={() => setReminders([...n.reminders, { id: `c${Date.now()}`, emoji: "⏰", kind: "interval", every: 30, time: "09:00", text: "", enabled: true }])}>Add reminder</button>
+          <span className="desc">Add your own: stand-up, medicine, or a one-time message at a set time.</span>
+          <button className="btn" onClick={() => {
+            const t = new Date(Date.now() + 30 * 60_000);
+            const time = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+            setReminders([...n.reminders, { id: `m${Date.now()}`, emoji: "", kind: "once", every: 30, time, text: "", enabled: true }]);
+          }}>Add message</button>
+          <button className="btn primary" onClick={() => setReminders([...n.reminders, { id: `c${Date.now()}`, emoji: "", kind: "interval", every: 30, time: "09:00", text: "", enabled: true }])}>Add reminder</button>
         </div>
       </Group>
 
       <Group title="Little extras">
-        <Row label="Greetings" desc="Says hi by time of day, and welcomes you back after a long break."><Toggle value={n.greetings} disabled={!n.enabled} onChange={(v) => set({ greetings: v })} /></Row>
-        <Row label="Random chatter" desc="Cute comments now and then.">
+        <Row label="Greetings" desc="Says hi once when the app starts, and welcomes you back after a long break."><Toggle value={n.greetings} disabled={!n.enabled} onChange={(v) => set({ greetings: v })} /></Row>
+        <Row label="Random chatter" desc="Cute comments now and then. Off by default to keep bubbles for what matters.">
           <Toggle value={n.chatter} disabled={!n.enabled} onChange={(v) => set({ chatter: v })} />
           <Slider value={n.chatterEvery} min={5} max={90} step={5} format={(v) => `~${v} min`} disabled={!n.enabled || !n.chatter} onChange={(v) => set({ chatterEvery: v })} />
         </Row>
-        <Row label="Reacts to clicks & pets" desc="“Geli ih!” when you poke it, “purr~” when you hover."><Toggle value={n.reactions} disabled={!n.enabled} onChange={(v) => set({ reactions: v })} /></Row>
+        <Row label="Reacts to clicks & pets" desc="“Geli ih!” when you poke it, “Hehe, enak~” when you hover."><Toggle value={n.reactions} disabled={!n.enabled} onChange={(v) => set({ reactions: v })} /></Row>
         <Row label="AI agent updates" desc="Tells you when an agent finishes, fails or needs you."><Toggle value={n.agentReactions} disabled={!n.enabled} onChange={(v) => set({ agentReactions: v })} /></Row>
         <Row label="Typing marathon" desc="After ~45 minutes of non-stop typing it suggests a break (it only counts key presses)."><Toggle value={n.praise} disabled={!n.enabled} onChange={(v) => set({ praise: v })} /></Row>
       </Group>

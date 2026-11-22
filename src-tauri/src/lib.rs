@@ -232,7 +232,7 @@ fn pet_action(app: AppHandle, name: String) {
 
 #[tauri::command]
 fn agent_event(app: AppHandle, agent: String, event: String) -> Result<String, String> {
-    agents::dispatch(&app, &agent, &event).map(String::from)
+    agents::dispatch(&app, &agent, &event, &Value::Null).map(String::from)
 }
 
 #[tauri::command]
@@ -337,6 +337,14 @@ fn read_text_file(path: String) -> Result<String, String> {
     characters::read_text(&path)
 }
 #[tauri::command]
+fn read_image_file(path: String) -> Result<String, String> {
+    characters::read_image(&path)
+}
+#[tauri::command]
+fn create_character(app: AppHandle, name: String, data_url: String, config: Value) -> Result<String, String> {
+    characters::create(&app, &name, &data_url, &config)
+}
+#[tauri::command]
 fn open_characters_dir(app: AppHandle) -> Result<(), String> {
     let d = characters::dir(&app)?;
     std::process::Command::new("open").arg(d).spawn().map_err(|e| e.to_string())?;
@@ -350,12 +358,14 @@ fn build_tray(app: &AppHandle, s: &Value) -> tauri::Result<()> {
     let on_top = CheckMenuItem::with_id(app, "ontop", "Always on Top", true, bool_of(s, "alwaysOnTop", true), None::<&str>)?;
     let jump = MenuItem::with_id(app, "jump", "Say Hi (Jump)", true, None::<&str>)?;
     let sit = MenuItem::with_id(app, "sit", "Sit / Stand Up", true, None::<&str>)?;
+    let peek = MenuItem::with_id(app, "peek", "Peek Mode On / Off", true, None::<&str>)?;
+    let pomo = MenuItem::with_id(app, "pomodoro", "Pomodoro Start / Stop", true, None::<&str>)?;
     let reset = MenuItem::with_id(app, "reset", "Reset Position", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("Cmd+,"))?;
     let quit = MenuItem::with_id(app, "quit", "Quit WanWan-chan", true, Some("Cmd+Q"))?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&show, &on_top, &jump, &sit, &reset, &sep1, &settings, &sep2, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &on_top, &jump, &sit, &peek, &pomo, &reset, &sep1, &settings, &sep2, &quit])?;
 
     TrayIconBuilder::with_id("tray")
         .icon(tauri::include_image!("icons/tray.png"))
@@ -376,6 +386,13 @@ fn build_tray(app: &AppHandle, s: &Value) -> tauri::Result<()> {
             }
             "sit" => {
                 let _ = app.emit("pet-action", "toggle-sit");
+            }
+            "peek" => {
+                let cur = bool_of(&app.state::<SettingsStore>().get(), "peekMode", false);
+                update_settings(app, &json!({"peekMode": !cur}));
+            }
+            "pomodoro" => {
+                let _ = app.emit("pet-action", "pomodoro:toggle");
             }
             "reset" => {
                 update_settings(app, &json!({"position": settings::defaults()["position"].clone(), "enabled": true}));
@@ -422,6 +439,8 @@ pub fn run() {
             load_character_original,
             delete_character,
             read_text_file,
+            read_image_file,
+            create_character,
             open_characters_dir,
         ])
         .setup(|app| {
