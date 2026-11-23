@@ -1,0 +1,357 @@
+{
+  "name": "Kuro (black cat)",
+  "frameWidth": 32,
+  "frameHeight": 32,
+  "anchor": {
+    "x": 0.5,
+    "y": 1
+  },
+  "animations": {
+    "idle": {
+      "start": 0,
+      "count": 2,
+      "fps": 3,
+      "loop": true
+    },
+    "blink": {
+      "start": 2,
+      "count": 3,
+      "fps": 14,
+      "loop": false
+    },
+    "walk": {
+      "start": 5,
+      "count": 4,
+      "fps": 8,
+      "loop": true
+    },
+    "run": {
+      "start": 9,
+      "count": 4,
+      "fps": 12,
+      "loop": true
+    },
+    "sit": {
+      "start": 13,
+      "count": 2,
+      "fps": 2,
+      "loop": true
+    },
+    "sleep": {
+      "start": 15,
+      "count": 2,
+      "fps": 1.5,
+      "loop": true
+    },
+    "look": {
+      "start": 17,
+      "count": 4,
+      "fps": 3,
+      "loop": true
+    },
+    "typing": {
+      "start": 21,
+      "count": 4,
+      "fps": 8,
+      "loop": true
+    },
+    "jump": {
+      "start": 25,
+      "count": 4,
+      "fps": 10,
+      "loop": false
+    },
+    "happy": {
+      "start": 29,
+      "count": 3,
+      "fps": 6,
+      "loop": true
+    },
+    "thinking": {
+      "start": 32,
+      "count": 3,
+      "fps": 3,
+      "loop": true
+    },
+    "drag": {
+      "start": 35,
+      "count": 2,
+      "fps": 5,
+      "loop": true
+    },
+    "drop": {
+      "start": 37,
+      "count": 2,
+      "fps": 8,
+      "loop": false
+    },
+    "error": {
+      "start": 39,
+      "count": 2,
+      "fps": 3,
+      "loop": true
+    },
+    "groom": {
+      "start": 41,
+      "count": 4,
+      "fps": 5,
+      "loop": true
+    },
+    "stretch": {
+      "start": 45,
+      "count": 3,
+      "fps": 4,
+      "loop": false
+    },
+    "yawn": {
+      "start": 48,
+      "count": 3,
+      "fps": 3,
+      "loop": false
+    },
+    "wiggle": {
+      "start": 51,
+      "count": 3,
+      "fps": 8,
+      "loop": true
+    }
+  },
+  "states": {
+    "idle": "idle",
+    "blink": "blink",
+    "walk": "walk",
+    "run": "run",
+    "sit": "sit",
+    "sleep": "sleep",
+    "look": "look",
+    "typing": "typing",
+    "jump": "jump",
+    "happy": "happy",
+    "thinking": "thinking",
+    "drag": "drag",
+    "drop": "drop",
+    "error": "error",
+    "groom": "groom",
+    "stretch": "stretch",
+    "yawn": "yawn",
+    "wiggle": "wiggle"
+  },
+  "anchors": [
+    {
+      "x": 16,
+      "y": 13
+    },
+    {
+      "x": 16,
+      "y": 14
+    },
+    {
+      "x": 16,
+      "y": 13
+    },
+    {
+      "x": 16,
+      "y": 13
+    },
+    {
+      "x": 16,
+      "y": 13
+    },
+    {
+      "x": 16,
+      "y": 13
+    },
+    {
+      "x": 17,
+      "y": 12
+    },
+    {
+      "x": 18,
+      "y": 13
+    },
+    {
+      "x": 17,
+      "y": 12
+    },
+    {
+      "x": 18,
+      "y": 14
+    },
+    {
+      "x": 18,
+      "y": 12
+    },
+    {
+      "x": 18,
+      "y": 14
+    },
+    {
+      "x": 18,
+      "y": 12
+    },
+    {
+      "x": 16,
+      "y": 13
+    },
+    {
+      "x": 16,
+      "y": 14
+    },
+    {
+      "x": 16,
+      "y": 19
+    },
+    {
+      "x": 16,
+      "y": 20
+    },
+    {
+      "x": 17,
+      "y": 13
+    },
+    {
+      "x": 17,
+      "y": 12
+    },
+    {
+      "x": 17,
+      "y": 13
+    },
+    {
+      "x": 17,
+      "y": 14
+    },
+    {
+      "x": 16,
+      "y": 14
+    },
+    {
+      "x": 16,
+      "y": 14
+    },
+    {
+      "x": 16,
+      "y": 14
+    },
+    {
+      "x": 16,
+      "y": 14
+    },
+    {
+      "x": 16,
+      "y": 15
+    },
+    {
+      "x": 16,
+      "y": 12
+    },
+    {
+      "x": 16,
+      "y": 12
+    },
+    {
+      "x": 16,
+      "y": 14
+    },
+    {
+      "x": 16,
+      "y": 13
+    },
+    {
+      "x": 16,
+      "y": 11
+    },
+    {
+      "x": 16,
+      "y": 13
+    },
+    {
+      "x": 18,
+      "y": 13
+    },
+    {
+      "x": 18,
+      "y": 13
+    },
+    {
+      "x": 18,
+      "y": 13
+    },
+    {
+      "x": 16,
+      "y": 12
+    },
+    {
+      "x": 16,
+      "y": 12
+    },
+    {
+      "x": 16,
+      "y": 16
+    },
+    {
+      "x": 16,
+      "y": 14
+    },
+    {
+      "x": 16,
+      "y": 13
+    },
+    {
+      "x": 16,
+      "y": 14
+    },
+    {
+      "x": 17,
+      "y": 13
+    },
+    {
+      "x": 17,
+      "y": 13
+    },
+    {
+      "x": 17,
+      "y": 13
+    },
+    {
+      "x": 17,
+      "y": 13
+    },
+    {
+      "x": 16,
+      "y": 15
+    },
+    {
+      "x": 16,
+      "y": 12
+    },
+    {
+      "x": 16,
+      "y": 13
+    },
+    {
+      "x": 16,
+      "y": 13
+    },
+    {
+      "x": 16,
+      "y": 12
+    },
+    {
+      "x": 16,
+      "y": 12
+    },
+    {
+      "x": 15,
+      "y": 15
+    },
+    {
+      "x": 16,
+      "y": 15
+    },
+    {
+      "x": 17,
+      "y": 15
+    }
+  ]
+}

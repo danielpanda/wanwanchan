@@ -5,11 +5,17 @@ import { CharacterTab } from "./tabs/Character";
 import { Behavior } from "./tabs/Behavior";
 import { AiTab } from "./tabs/Ai";
 import { Notifications } from "./tabs/Notifications";
+import { FocusTab } from "./tabs/Focus";
+import { BondTab } from "./tabs/Bond";
+import { CalendarTab } from "./tabs/Calendar";
 
 const TABS = [
   { id: "general", label: "General" },
   { id: "character", label: "Character" },
   { id: "behavior", label: "Behavior" },
+  { id: "focus", label: "Focus" },
+  { id: "calendar", label: "Calendar" },
+  { id: "bond", label: "Bond" },
   { id: "notify", label: "Notifications" },
   { id: "ai", label: "AI Integration" },
 ] as const;
@@ -35,6 +41,9 @@ export function App() {
         {tab === "general" && <General {...p} />}
         {tab === "character" && <CharacterTab {...p} />}
         {tab === "behavior" && <Behavior {...p} />}
+        {tab === "focus" && <FocusTab {...p} />}
+        {tab === "calendar" && <CalendarTab {...p} />}
+        {tab === "bond" && <BondTab {...p} />}
         {tab === "notify" && <Notifications {...p} />}
         {tab === "ai" && <AiTab {...p} />}
       </main>

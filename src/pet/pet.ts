@@ -1,16 +1,22 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { DEFAULT_SETTINGS, type Settings, withDefaults } from "../shared/types";
-import { loadUserCharacter } from "../shared/api";
+import { fetchUrlText, focusApp, focusPet, listApps, loadUserCharacter, openApp, openUrl } from "../shared/api";
 import { AGENT_LABEL, pick } from "../shared/messages";
-import { fmtClock, Pomodoro } from "./pomodoro";
+import { ACCESSORIES, award, levelOf, unlocked, type XpKind } from "../shared/bond";
+import { drawAccessories } from "./accessories";
 import { Bubble } from "./bubble";
+import { CalendarSync } from "./calendar";
+import { FocusController, type FocusAction } from "./focus";
+import { AgentHistory } from "./history";
+import { fuzzy, parseCommand, targetOf } from "./launcher";
 import { Notifier } from "./notify";
+import { Panel } from "./panel";
 import {
   AGENT_ANIM, aggregateAgents, PRIORITY, StateMachine, TypingMeter, type AgentStateName,
 } from "./fsm";
 import {
-  buildSprite, drawFrame, hasAnim, loadBuiltinCat, missingStates, resolveAnim, type LoadedSprite, type ResolvedAnim,
+  buildSprite, builtinCharacters, drawFrame, hasAnim, loadBuiltin, loadBuiltinCat, missingStates, resolveAnim, type LoadedSprite, type ResolvedAnim,
 } from "./sprite";
 
 const AGENT_STALE_MS = 30 * 60_000;
@@ -30,7 +36,19 @@ export async function startPet() {
   document.body.appendChild(canvas);
   const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
   const bubble = new Bubble();
-  // pinned note + pomodoro clock, floating above the head
+  const history = new AgentHistory();
+  let apps: string[] | null = null;
+  const getApps = async () => (apps ??= await listApps().catch(() => []));
+  let panelTick: number | undefined;
+  const panel = new Panel({
+    onOpenRun: (r) => { if (r.bid) focusApp(r.bid).catch(() => {}); },
+    onSubmit: (t) => void runCommand(t),
+    suggest: (t) => (apps ? fuzzy(targetOf(t), apps, 5) : []),
+    onPick: (a) => void launch(a),
+    onChip: (k) => { void runIntent({ type: "action", name: k }); },
+    onClose: () => { window.clearInterval(panelTick); panelTick = undefined; },
+  });
+  // pinned note + waiting agent badge, floating above the head
   const note = document.createElement("div");
   Object.assign(note.style, {
     position: "fixed", left: "0", top: "0", display: "none", pointerEvents: "none", whiteSpace: "nowrap", maxWidth: "220px",
@@ -66,6 +84,8 @@ export async function startPet() {
   let lastLookPos = { x: -1e4, y: -1e4 };
   let lastActivity = performance.now();
   let restKind: "sit" | "sleep" | null = null;
+  let bond = DEFAULT_SETTINGS.bond;
+  let bondTimer: number | undefined;
   let stay = false; // "sit & stay" requested by the user
   let lingerAt = Infinity;
   let lunge: { x0: number; x1: number; start: number; dur: number } | null = null;
@@ -76,12 +96,12 @@ export async function startPet() {
   let giant: { out: boolean; start: number; dur: number } | null = null;
   let peekOut = false; // peek mode: came out for a reminder
   const peeking = () => settings.peekMode && !peekOut;
-  let pomoTimer: number | undefined, clockTimer: number | undefined;
 
   let timer: number | null = null, raf: number | null = null;
   let restTimer: number | undefined, wanderTimer: number | undefined, saveTimer: number | undefined;
   const agents = new Map<string, { state: AgentStateName; ts: number }>();
   let agentTimer: number | undefined;
+  const agentBid = new Map<string, string>(); // app that last reported each agent (for click-to-open)
   const agentStart = new Map<string, number>(); // when each agent started working (for "took 2m 14s")
 
   // ---------------------------------------------------------------- speech bubbles & reminders
@@ -89,6 +109,9 @@ export async function startPet() {
     settings: () => settings,
     typing: () => sm.has("typing", performance.now()),
     peeking,
+    award: (k) => giveXp(k),
+    open: (bid) => { focusApp(bid).catch(() => {}); },
+    openUrl: (u) => { openUrl(u).catch(() => {}); },
     disableReminder: (id) => {
       const reminders = settings.notify.reminders.map((r) => (r.id === id ? { ...r, enabled: false } : r));
       invoke("set_settings", { patch: { notify: { reminders } } }).catch(() => {});
@@ -105,11 +128,95 @@ export async function startPet() {
         if (o.anim === "stretch") setGiant(true); // stretch together, full screen
       }
       bubble.show(text, {
-        seconds: o.seconds, sound: o.sound, buttons: o.buttons,
+        seconds: o.seconds, sound: o.sound, buttons: o.buttons, onClick: o.onClick,
         onClose: () => { sm.release("notify"); setGiant(false); if (peekOut) comeOut(false); o.onClose(); updateNote(); wake(); },
       });
       updateNote();
       place(now);
+      wake();
+    },
+  });
+
+  const calendar = new CalendarSync({
+    settings: () => settings,
+    fetchText: fetchUrlText,
+    apply: (events) => notifier.setCalendar(events, settings.calendar.leadMin),
+  });
+
+  // ---------------------------------------------------------------- quick panel & "open <app>"
+  function toggleSit(now: number) {
+    stay = !stay;
+    markActivity(now);
+    if (stay) { moveTarget = null; sm.release("move"); lunge = null; sm.hold("stay", "sit", PRIORITY.stay); }
+    else sm.release("stay");
+    notifier.remark(stay ? "sit" : "stand");
+    wake();
+  }
+
+  function showPanel() {
+    if (!running) return;
+    bubble.hide();
+    const lang = settings.notify.language;
+    void getApps();
+    panel.show(history.list(Date.now()), lang);
+    place();
+    focusPet().catch(() => {});
+    window.clearInterval(panelTick);
+    panelTick = window.setInterval(() => panel.render(history.list(Date.now()), settings.notify.language), 1000);
+  }
+  const togglePanel = () => (panel.visible ? panel.hide() : showPanel());
+
+  async function launch(app: string) {
+    const lang = settings.notify.language;
+    try {
+      await openApp(app);
+      panel.hide();
+      notifier.say(lang === "id" ? `Membuka ${app}` : `Opening ${app}`);
+      sm.pulse("react", "happy", PRIORITY.jump + 1, performance.now(), 1800);
+      wake();
+    } catch {
+      panel.setHint(lang === "id" ? `Gagal membuka ${app}` : `Couldn't open ${app}`);
+    }
+  }
+
+  async function runIntent(it: ReturnType<typeof parseCommand>, text = "") {
+    const lang = settings.notify.language, now = performance.now();
+    if (it.type === "app") return launch(it.app);
+    if (it.type === "action") {
+      panel.hide();
+      if (it.name === "focus") focus.dispatch("toggle");
+      else if (it.name === "sit") toggleSit(now);
+      else if (it.name === "jump") { markActivity(now); doJump(now); }
+      else if (it.name === "settings") invoke("open_settings").catch(() => {});
+      else if (it.name === "panel") showPanel();
+      return;
+    }
+    panel.setHint(it.suggestions.length
+      ? (lang === "id" ? "Maksud kamu yang mana?" : "Which one did you mean?")
+      : (lang === "id" ? `Aku belum bisa "${text.trim()}". Coba: buka <aplikasi>, fokus, duduk` : `I can't do "${text.trim()}" yet. Try: open <app>, focus, sit`));
+    panel.showSuggestions(text, it.suggestions);
+  }
+
+  async function runCommand(text: string) { return runIntent(parseCommand(text, await getApps()), text); }
+
+  // ---------------------------------------------------------------- focus (pomodoro)
+  const focus = new FocusController({
+    settings: () => settings,
+    onChange: (snap, change) => {
+      const now = performance.now(), lang = settings.notify.language;
+      if (snap.phase === "work" && snap.running) sm.hold("focus", "typing", PRIORITY.focus);
+      else sm.release("focus");
+      if (change === "start") { notifier.notice(pick(lang, "focusStart")); doJump(now); }
+      else if (change === "stop") notifier.notice(pick(lang, "focusStop"));
+      else if (change && typeof change === "object") {
+        if (change.ended === "work") {
+          giveXp("focus");
+          notifier.notice(pick(lang, change.next === "longBreak" ? "longBreak" : "breakStart"), "happy");
+          sm.pulse("react", "happy", PRIORITY.jump + 1, now, 3000);
+        } else {
+          notifier.notice(pick(lang, "focusBack"));
+        }
+      }
       wake();
     },
   });
@@ -176,6 +283,8 @@ export async function startPet() {
     const r = rect(now);
     const t = `translate3d(${dev(r.left)}px,${dev(r.top)}px,0)${r.sc !== 1 ? ` scale(${r.sc.toFixed(4)})` : ""}`;
     if (t !== lastTransform) { canvas.style.transform = t; lastTransform = t; }
+    focus.position(r.cx, r.top + ch * r.sc, W);
+    if (panel.visible) panel.position(r.cx, r.top, r.top + ch * r.sc, W);
     if (bubble.visible) bubble.position(r.cx, r.top, r.top + ch * r.sc, W);
     if (note.style.display !== "none") {
       const nw = note.offsetWidth, nh = note.offsetHeight;
@@ -184,10 +293,9 @@ export async function startPet() {
     }
   }
 
-  /** Pinned note and pomodoro clock. Hidden while a speech bubble is up. */
+  /** Pinned note and waiting agent badge. Hidden while a speech bubble is up. */
   function updateNote() {
     const parts: string[] = [];
-    if (pomo.running) parts.push(`${pomo.phase === "focus" ? "Focus" : "Break"} ${fmtClock(pomo.remaining(Date.now()))}`);
     const pin = settings.notify.pinned.trim();
     if (pin) parts.push(pin);
     // agent badge: survives a dismissed bubble so pending decisions stay visible
@@ -222,14 +330,42 @@ export async function startPet() {
     return anim.frames[anim.loop ? f % n : Math.min(f, n - 1)];
   }
 
+  const wornAccessories = () => {
+    const ok = new Set(unlocked(bond.xp).map((a) => a.id));
+    return settings.accessories.filter((id) => ok.has(id));
+  };
+
+  // ---------------------------------------------------------------- bond (affection)
+  function giveXp(kind: XpKind) {
+    const r = award(bond, kind, new Date());
+    if (!r.gained && !r.levelUp) return;
+    bond = r.state;
+    emit("bond-changed", bond).catch(() => {});
+    window.clearTimeout(bondTimer);
+    bondTimer = window.setTimeout(() => invoke("save_bond", { bond }).catch(() => {}), 1500);
+    if (r.levelUp) {
+      const acc = ACCESSORIES.find((a) => a.level === r.levelUp);
+      const lang = settings.notify.language;
+      const extra = acc ? ` · ${lang === "id" ? "Terbuka" : "Unlocked"}: ${acc.name[lang]}` : "";
+      if (acc && !settings.accessories.includes(acc.id)) invoke("set_settings", { patch: { accessories: [...settings.accessories, acc.id] } }).catch(() => {});
+      sm.pulse("react", "happy", PRIORITY.jump + 1, performance.now(), 3200);
+      notifier.say(`${pick(lang, "levelUp")} (Lv ${levelOf(bond.xp).level})${extra}`);
+      lastDrawKey = "";
+      wake();
+    }
+  }
+
   function draw(now: number) {
     if (!sprite || !anim) return;
     const frame = frameIndex(now);
     const flip = facing < 0;
-    const key = `${anim.name}|${frame}|${flip}|${canvas.width}`;
+    const worn = wornAccessories();
+    const key = `${anim.name}|${frame}|${flip}|${canvas.width}|${worn.join(",")}`;
     if (key === lastDrawKey) return;
     lastDrawKey = key;
     drawFrame(ctx, sprite, frame, canvas.width, canvas.height, flip);
+    const anchor = sprite.cfg.anchors?.[frame];
+    if (worn.length && anchor) drawAccessories(ctx, worn, anchor, canvas.width / sprite.cfg.frameWidth, canvas.width, flip);
   }
 
   function step(now: number) {
@@ -444,6 +580,7 @@ export async function startPet() {
   function onClick(now: number) {
     clicks = clicks.filter((t) => now - t < 1300);
     clicks.push(now);
+    giveXp("click");
     bump(0.12);
     if (clicks.length >= 3 && sprite && hasAnim(sprite.cfg, "happy")) {
       clicks = [];
@@ -474,7 +611,7 @@ export async function startPet() {
 
   // ---------------------------------------------------------------- hit testing / click-through
   function isOver(px: number, py: number, now = performance.now()): boolean {
-    if (bubble.contains(px, py)) return true;
+    if (bubble.contains(px, py) || panel.contains(px, py)) return true;
     if (!sprite || canvas.style.display === "none") return false;
     const { left, top, sc } = rect(now);
     if (px < left || py < top || px >= left + cw * sc || py >= top + ch * sc) return false;
@@ -492,14 +629,14 @@ export async function startPet() {
     if (over !== overChar) {
       overChar = over;
       invoke("set_ignore_cursor", { ignore: !over }).catch(() => {});
-      const onBubble = bubble.contains(px, py);
-      document.body.style.cursor = over && !onBubble ? "grab" : "default";
+      const onUi = bubble.contains(px, py) || panel.contains(px, py);
+      document.body.style.cursor = over && !onUi ? "grab" : "default";
       window.clearTimeout(hoverTimer);
-      if (over && !dragging && !onBubble) {
+      if (over && !dragging && !onUi) {
         hoverTimer = window.setTimeout(() => {
           const now = performance.now();
           if (overChar && !dragging && settings.mouseInteraction && sprite && hasAnim(sprite.cfg, "happy")
-            && sm.pulse("hover", "happy", PRIORITY.agentDone, now, 2200, 8000)) { bump(0.1); notifier.purr(); wake(); }
+            && sm.pulse("hover", "happy", PRIORITY.agentDone, now, 2200, 8000)) { bump(0.1); notifier.purr(); giveXp("pet"); wake(); }
         }, 1600);
       }
     }
@@ -526,7 +663,7 @@ export async function startPet() {
 
   // ---------------------------------------------------------------- pointer (drag / click)
   window.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0 || giant || bubble.contains(e.clientX, e.clientY) || !isOver(e.clientX, e.clientY)) return;
+    if (e.button !== 0 || giant || bubble.contains(e.clientX, e.clientY) || panel.contains(e.clientX, e.clientY) || !isOver(e.clientX, e.clientY)) return;
     down = { x: e.clientX, y: e.clientY, id: e.pointerId };
     grab = { x: x - e.clientX, y: y - e.clientY };
     try { document.documentElement.setPointerCapture(e.pointerId); } catch { /* ignore */ }
@@ -573,6 +710,16 @@ export async function startPet() {
     updateOver(e.clientX, e.clientY);
   });
 
+  // right-click or double-click the character to open the quick panel
+  window.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    if (!panel.contains(e.clientX, e.clientY) && isOver(e.clientX, e.clientY)) togglePanel();
+  });
+  window.addEventListener("dblclick", (e) => {
+    if (!bubble.contains(e.clientX, e.clientY) && !panel.contains(e.clientX, e.clientY) && isOver(e.clientX, e.clientY)) showPanel();
+  });
+  window.addEventListener("blur", () => { window.setTimeout(() => { if (panel.visible && !document.hasFocus()) panel.hide(); }, 200); });
+
   // ---------------------------------------------------------------- peek mode
   function glide(to: number) {
     lunge = { x0: x, x1: to, start: performance.now(), dur: 700 };
@@ -595,26 +742,6 @@ export async function startPet() {
     else { sm.hold("peek", "peek", PRIORITY.stay); glide(peekX()); window.setTimeout(() => { facing = -1; lastDrawKey = ""; wake(); }, 750); }
   }
 
-  // ---------------------------------------------------------------- pomodoro
-  const pomo = new Pomodoro(() => settings.pomodoro, (e) => {
-    const lang = settings.notify.language;
-    if (e.type === "stop") notifier.notice(pick(lang, "pomoStop").replace("{n}", String(e.done)));
-    else {
-      const key = e.phase === "focus" ? "pomoFocus" : e.phase === "short" ? "pomoBreak" : "pomoLong";
-      notifier.notice(pick(lang, key).replace("{m}", String(e.minutes)), e.phase === "focus" ? undefined : "happy");
-    }
-    armPomodoro();
-  });
-
-  function armPomodoro() {
-    window.clearTimeout(pomoTimer); window.clearInterval(clockTimer);
-    if (pomo.running) {
-      pomoTimer = window.setTimeout(() => { pomo.tick(Date.now()); armPomodoro(); }, Math.max(250, pomo.endsAt - Date.now()));
-      clockTimer = window.setInterval(updateNote, 1000);
-    }
-    updateNote();
-  }
-
   // ---------------------------------------------------------------- agents
   function applyAgents() {
     window.clearTimeout(agentTimer);
@@ -627,13 +754,17 @@ export async function startPet() {
     updateNote();
   }
 
-  function onAgentEvent(p: { agent: string; state: AgentStateName; detail?: string }) {
+  function onAgentEvent(p: { agent: string; state: AgentStateName; detail?: string; bid?: string | null }) {
     if (!running) return;
     const a = settings.agent;
     const allowed = p.agent === "test" || (a.enabled && (a.agents[p.agent as keyof typeof a.agents] ?? a.agents.custom));
     if (!allowed) return;
     const now = performance.now();
     markActivity(now);
+    if (p.bid) agentBid.set(p.agent, p.bid);
+    const bid = p.bid ?? agentBid.get(p.agent);
+    history.record({ agent: p.agent, state: p.state, bid }, Date.now());
+    if (panel.visible) panel.render(history.list(Date.now()), settings.notify.language);
     if ((p.state === "thinking" || p.state === "working") && !agentStart.has(p.agent)) agentStart.set(p.agent, now);
     const took = agentStart.has(p.agent) ? (now - agentStart.get(p.agent)!) / 1000 : undefined;
     // PermissionRequest fires at once, Notification(permission_prompt) ~6 s later: one bubble is enough
@@ -641,6 +772,7 @@ export async function startPet() {
     if (p.state === "completed" || p.state === "error" || p.state === "idle") agentStart.delete(p.agent);
     if (p.state !== "waiting") notifier.agentResumed(p.agent);
     if (p.state === "completed") {
+      giveXp("agent");
       agents.set(p.agent, { state: "idle", ts: now });
       sm.pulse("agentDone", "happy", PRIORITY.agentDone, now, 3200);
       bump(0.2);
@@ -653,14 +785,14 @@ export async function startPet() {
       }
     }
     applyAgents();
-    if ((p.state === "completed" || p.state === "error" || p.state === "waiting") && !repeat) notifier.agent(p.state, p.agent, took, p.detail);
+    if ((p.state === "completed" || p.state === "error" || p.state === "waiting") && !repeat) notifier.agent(p.state, p.agent, took, p.detail, bid);
     wake();
   }
 
   // ---------------------------------------------------------------- settings / lifecycle
   async function loadCharacter(id: string) {
     try {
-      if (id === "cat") sprite = await loadBuiltinCat();
+      if ((await builtinCharacters()).some((b) => b.id === id)) sprite = await loadBuiltin(id);
       else {
         const c = await loadUserCharacter(id);
         sprite = await buildSprite(c.config, c.image);
@@ -676,7 +808,9 @@ export async function startPet() {
 
   async function applySettings(next: Settings, first = false) {
     const prev = settings;
+    if (next.bond.xp > bond.xp) bond = next.bond; // other windows never move it backwards
     settings = next;
+    lastDrawKey = "";
     const wasRunning = running;
     running = next.enabled;
     if (!running) {
@@ -700,6 +834,8 @@ export async function startPet() {
     updateRest();
     scheduleWander();
     notifier.sync();
+    calendar.configure();
+    focus.render();
     updateNote();
     wake();
   }
@@ -712,7 +848,10 @@ export async function startPet() {
     window.clearTimeout(restTimer); window.clearTimeout(wanderTimer); window.clearTimeout(agentTimer); window.clearTimeout(quirkTimer);
     restTimer = undefined;
     canvas.style.display = "none";
+    panel.hide();
     notifier.stop();
+    calendar.stop();
+    focus.dispatch("stop");
     updateNote();
   }
 
@@ -747,29 +886,19 @@ export async function startPet() {
     wake();
   });
   await listen<Settings>("settings-changed", (e) => { void applySettings(withDefaults(e.payload)); });
-  await listen<{ agent: string; state: AgentStateName; detail?: string }>("agent-event", (e) => onAgentEvent(e.payload));
+  await listen<{ agent: string; state: AgentStateName; detail?: string; bid?: string | null }>("agent-event", (e) => onAgentEvent(e.payload));
   await listen<string>("character-changed", (e) => {
     if (e.payload === spriteId) { void loadCharacter(spriteId).then(() => { layout(); wake(); }); }
   });
   await listen<string>("pet-action", (e) => {
+    if (e.payload.startsWith("focus:")) { if (running) focus.dispatch(e.payload.slice(6) as FocusAction); return; }
     if (!running) return;
     const now = performance.now();
     if (e.payload === "jump") { markActivity(now); doJump(now); }
-    if (e.payload === "toggle-sit") {
-      stay = !stay;
-      markActivity(now);
-      if (stay) { moveTarget = null; sm.release("move"); lunge = null; sm.hold("stay", "sit", PRIORITY.stay); }
-      else sm.release("stay");
-      notifier.remark(stay ? "sit" : "stand");
-      wake();
-    }
+    if (e.payload === "toggle-sit") toggleSit(now);
+    if (e.payload === "panel") togglePanel();
     if (e.payload.startsWith("say:")) notifier.say(e.payload.slice(4, 300));
     if (e.payload === "stretch-test") notifier.notice(pick(settings.notify.language, "stretch"), "stretch");
-    if (e.payload === "pomodoro:toggle") pomo.toggle(Date.now());
-    if (e.payload === "pomodoro:start") pomo.start(Date.now());
-    if (e.payload === "pomodoro:stop") pomo.stop();
-    if (e.payload === "pomodoro:skip") pomo.skip(Date.now());
-    if (e.payload.startsWith("pomodoro:")) armPomodoro();
     if (e.payload === "reset-position") { x = W * pos.x; y = H * pos.y; clampPos(); place(); wake(); }
   });
   await listen("pet-refit", () => { layout(); });
@@ -778,9 +907,19 @@ export async function startPet() {
 
   const initial = withDefaults(await invoke("get_settings"));
   pos = { ...initial.position };
+  bond = initial.bond;
   await applySettings(initial, true);
   scheduleBlink();
-  window.setTimeout(() => notifier.greet(), 3500); // once per launch
+  // Greet at most once every 3 hours, so relaunching the app doesn't repeat it.
+  const greetDue = () => {
+    try {
+      const last = Number(localStorage.getItem("ww-last-greet") ?? 0);
+      if (Date.now() - last < 3 * 3600_000) return false;
+      localStorage.setItem("ww-last-greet", String(Date.now()));
+    } catch { /* storage unavailable: greet */ }
+    return true;
+  };
+  window.setTimeout(() => { if (greetDue()) notifier.greet(); giveXp("daily"); }, 3500);
   // Debug hook for development builds
   if (import.meta.env.DEV) (window as any).__pet = { sm, get state() { return state; } };
 }

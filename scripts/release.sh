@@ -3,9 +3,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PATH="$HOME/.cargo/bin:$PATH"
-npm run tauri build
-DMG=$(ls src-tauri/target/release/bundle/dmg/WanWan-chan_*.dmg | head -1)
+npm run tauri build -- --target universal-apple-darwin --bundles app
+./scripts/make-dmg.sh
+DMG=$(ls -t src-tauri/target/release/bundle/dmg/WanWan-chan_*.dmg | head -1)
 echo
-echo "App: src-tauri/target/release/bundle/macos/WanWan-chan.app"
+echo "App: src-tauri/target/universal-apple-darwin/release/bundle/macos/WanWan-chan.app"
 echo "DMG: $DMG"
 echo "sha256: $(shasum -a 256 "$DMG" | cut -d' ' -f1)"

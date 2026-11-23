@@ -37,6 +37,39 @@ mod mac {
         unsafe { CGRequestListenEventAccess() }
     }
 
+    /// Re-fit the pet window whenever displays are added, removed or re-arranged.
+    pub fn watch_displays(app: &AppHandle) {
+        use objc2_app_kit::NSApplicationDidChangeScreenParametersNotification;
+        use objc2_foundation::{NSNotification, NSNotificationCenter};
+        let app = app.clone();
+        let block = RcBlock::new(move |_n: NonNull<NSNotification>| {
+            let a = app.clone();
+            // displays settle for a moment after the change; debounce, then refit on the main thread
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                let a2 = a.clone();
+                let _ = a.run_on_main_thread(move || crate::refit(&a2));
+            });
+        });
+        unsafe {
+            let center = NSNotificationCenter::defaultCenter();
+            let obs = center.addObserverForName_object_queue_usingBlock(
+                Some(NSApplicationDidChangeScreenParametersNotification), None, None, &block,
+            );
+            std::mem::forget(obs); // lives as long as the app
+        }
+    }
+
+    /// Show above fullscreen apps and on every Space; `top=false` restores a normal window level.
+    pub fn harden_window(ns_window: usize, top: bool) {
+        use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior as B};
+        unsafe {
+            let w = &*(ns_window as *const NSWindow);
+            w.setCollectionBehavior(B::CanJoinAllSpaces | B::FullScreenAuxiliary | B::Stationary | B::IgnoresCycle);
+            w.setLevel(if top { 25 } else { 0 });
+        }
+    }
+
     thread_local! {
         static MOUSE: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
         static KEY: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
@@ -139,6 +172,22 @@ fn emit_scroll(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("pet") {
         let _ = w.emit("scroll", ());
     }
+}
+
+pub fn watch_displays(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    mac::watch_displays(app);
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
+}
+
+pub fn harden_window(app: &AppHandle, ns_window: usize, top: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app.run_on_main_thread(move || mac::harden_window(ns_window, top));
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, ns_window, top);
 }
 
 pub fn key_permission() -> bool {

@@ -2,7 +2,7 @@ type PetState = string;
 
 /** Animation priorities: higher wins. Equal priority -> most recently requested wins. */
 export const PRIORITY = {
-  idle: 10, blink: 11, rest: 20, quirk: 25, transition: 26, move: 30, linger: 35, stay: 36, look: 40, notify: 45, typing: 60, excited: 61,
+  idle: 10, blink: 11, rest: 20, quirk: 25, transition: 26, focus: 27, move: 30, linger: 35, stay: 36, look: 40, notify: 45, typing: 60, excited: 61,
   agent: 70, agentDone: 75, jump: 80, drop: 90, drag: 100,
 } as const;
 

@@ -1,34 +1,58 @@
 import { describe, expect, it } from "vitest";
-import { fmtClock, Pomodoro, type PomoEvent } from "../src/pet/pomodoro";
+import { fmtClock, Pomodoro } from "../src/pet/pomodoro";
+import { DEFAULT_FOCUS } from "../src/shared/types";
 
+const cfg = { ...DEFAULT_FOCUS, workMin: 25, breakMin: 5, longBreakMin: 15, cycles: 3 };
 const MIN = 60_000;
 
 describe("Pomodoro", () => {
-  it("loops focus -> short break, and a long break every N sessions", () => {
-    const ev: PomoEvent[] = [];
-    const p = new Pomodoro(() => ({ focus: 25, shortBreak: 5, longBreak: 15, longEvery: 2 }), (e) => ev.push(e));
+  it("runs work -> break -> work ... -> long break", () => {
+    const p = new Pomodoro(() => cfg);
     p.start(0);
-    expect(p.phase).toBe("focus");
-    expect(p.tick(24 * MIN)).toBe(false);
-    expect(p.tick(25 * MIN)).toBe(true);
-    expect(p.phase).toBe("short");
-    p.tick(30 * MIN); // -> focus
-    p.tick(55 * MIN); // second focus done -> long
-    expect(p.phase).toBe("long");
-    expect(p.remaining(60 * MIN)).toBe(10 * MIN);
+    expect(p.snapshot(0)).toMatchObject({ phase: "work", cycle: 1, running: true });
+    expect(p.poll(24 * MIN)).toBeNull();
+    expect(p.poll(25 * MIN)).toEqual({ ended: "work", next: "break" });
+    expect(p.poll(30 * MIN)).toEqual({ ended: "break", next: "work" });
+    expect(p.snapshot(30 * MIN).cycle).toBe(2);
+    p.poll(55 * MIN); p.poll(60 * MIN);
+    expect(p.snapshot(60 * MIN)).toMatchObject({ phase: "work", cycle: 3 });
+    expect(p.poll(85 * MIN)).toEqual({ ended: "work", next: "longBreak" });
+    expect(p.poll(100 * MIN)).toEqual({ ended: "longBreak", next: "work" });
+    expect(p.snapshot(100 * MIN).cycle).toBe(1);
+  });
+
+  it("pause freezes the clock and resume continues from it", () => {
+    const p = new Pomodoro(() => cfg);
+    p.start(0);
+    p.pause(10 * MIN);
+    expect(p.snapshot(500 * MIN).remainingMs).toBe(15 * MIN);
+    expect(p.poll(500 * MIN)).toBeNull();
+    p.resume(500 * MIN);
+    expect(p.nextEventIn(500 * MIN)).toBe(15 * MIN);
+  });
+
+  it("skip advances immediately; stop resets", () => {
+    const p = new Pomodoro(() => cfg);
+    expect(p.skip(0)).toBeNull();
+    p.start(0);
+    expect(p.skip(MIN)).toEqual({ ended: "work", next: "break" });
     p.stop();
-    expect(ev.map((e) => (e.type === "phase" ? e.phase : `stop${e.done}`))).toEqual(["focus", "short", "focus", "long", "stop2"]);
+    expect(p.snapshot(0)).toMatchObject({ phase: "idle", running: false });
+    expect(p.nextEventIn(0)).toBeNull();
   });
-  it("skip and toggle", () => {
-    const p = new Pomodoro(() => ({ focus: 25, shortBreak: 5, longBreak: 15, longEvery: 4 }), () => {});
-    p.toggle(0);
-    p.skip(1000);
-    expect(p.phase).toBe("short");
-    p.toggle(2000);
-    expect(p.running).toBe(false);
+
+  it("picks up changed durations on the next phase", () => {
+    let c = { ...cfg };
+    const p = new Pomodoro(() => c);
+    p.start(0);
+    c = { ...c, breakMin: 10 };
+    p.poll(25 * MIN);
+    expect(p.nextEventIn(25 * MIN)).toBe(10 * MIN);
   });
+
   it("formats the clock", () => {
     expect(fmtClock(25 * MIN)).toBe("25:00");
-    expect(fmtClock(61_500)).toBe("1:02");
+    expect(fmtClock(61_000)).toBe("01:01");
+    expect(fmtClock(-5)).toBe("00:00");
   });
 });

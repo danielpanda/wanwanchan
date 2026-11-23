@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
-  deleteCharacter, importCharacter, listCharacters, loadUserCharacter, openCharactersDir, readTextFile,
+  deleteCharacter, exportCharacterPack, importCharacter, importCharacterPack, listCharacters, loadUserCharacter, openCharactersDir, readTextFile,
   saveCharacterConfig, saveCharacterImage, loadCharacterOriginal, readImageFile, createCharacter, type CharacterInfo,
 } from "../../shared/api";
 import { REQUIRED_STATES, STATES, STATE_LABELS, type AnimationDef, type PetState, type SpriteConfig } from "../../shared/types";
 import { alphaOf, animationsFromGuess, guessGrid, suggestRender } from "../../shared/detect";
-import { gridAnimations, loadImage, missingStates, normalizeConfig, resolveAnim, drawFrame, type LoadedSprite } from "../../pet/sprite";
+import { builtinCharacters, gridAnimations, loadImage, missingStates, normalizeConfig, resolveAnim, drawFrame, type LoadedSprite } from "../../pet/sprite";
 import { mergeStrip, processImport, processStrip, scaleFor, type ImportOptions, type StripOptions } from "../../shared/imageio";
 import { defaultTiming } from "../../shared/strip";
 import { Group, Page, Row, Select, Slider, Toggle } from "../ui";
@@ -16,9 +16,9 @@ import { RowGuide } from "./RowGuide";
 interface Loaded { cfg: SpriteConfig; img: HTMLImageElement }
 
 async function loadForEditing(id: string): Promise<Loaded> {
-  if (id === "cat") {
-    const cfg = normalizeConfig(await (await fetch("/characters/cat/sprite.json")).json());
-    return { cfg, img: await loadImage("/characters/cat/sheet.png") };
+  if ((await builtinCharacters()).some((b) => b.id === id)) {
+    const cfg = normalizeConfig(await (await fetch(`/characters/${id}/sprite.json`)).json());
+    return { cfg, img: await loadImage(`/characters/${id}/sheet.png`) };
   }
   const c = await loadUserCharacter(id);
   return { cfg: normalizeConfig(c.config), img: await loadImage(c.image) };
@@ -92,9 +92,14 @@ export function CharacterTab({ settings: s, update }: TabProps) {
   const [busy, setBusy] = useState(false);
   const [jsonText, setJsonText] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
-  const builtin = s.character === "cat";
+  const [bundled, setBundled] = useState<string[]>(["cat"]);
+  const builtin = bundled.includes(s.character);
 
-  const refresh = useCallback(() => listCharacters().then(setChars).catch(() => {}), []);
+  const refresh = useCallback(async () => {
+    const [user, b] = await Promise.all([listCharacters().catch(() => [] as CharacterInfo[]), builtinCharacters()]);
+    setBundled(b.map((x) => x.id));
+    setChars([...b.map((x) => ({ id: x.id, name: x.name, builtin: true })), ...user.filter((u) => !u.builtin)]);
+  }, []);
   useEffect(() => { void refresh(); }, [refresh]);
 
   useEffect(() => {
@@ -106,6 +111,18 @@ export function CharacterTab({ settings: s, update }: TabProps) {
   }, [s.character, reloadKey]);
 
   const edit = (next: SpriteConfig) => { setDraft(next); setDirty(true); setJsonText(JSON.stringify(next, null, 2)); };
+
+  async function doExport() {
+    const dest = await saveDialog({ defaultPath: `${(draft?.name ?? "character").replace(/[^\w-]+/g, "-")}.wanwanchan`, filters: [{ name: "WanWan-chan character", extensions: ["wanwanchan"] }] });
+    if (!dest) return;
+    try { await exportCharacterPack(s.character, dest); setMsg(`Exported to ${dest}`); } catch (e) { setMsg(String(e)); }
+  }
+
+  async function doImportPack() {
+    const path = await open({ multiple: false, filters: [{ name: "Character pack", extensions: ["wanwanchan", "pixelmate"] }] });
+    if (typeof path !== "string") return;
+    try { const r = await importCharacterPack(path); await refresh(); update({ character: r.id }); setMsg(`Imported “${r.name}”.`); } catch (e) { setMsg(String(e)); }
+  }
 
   /** Clean the image, rebuild/animate it, store it and switch to it. */
   async function applyPipeline(id: string, imageSrc: string, name: string, setScale: boolean) {
@@ -222,6 +239,10 @@ export function CharacterTab({ settings: s, update }: TabProps) {
           <label className="flex items-center gap-1 text-[12px]"><input type="checkbox" checked={opt.clean} onChange={(e) => setOpt({ ...opt, clean: e.target.checked })} />clean up</label>
           <label className="flex items-center gap-1 text-[12px]"><input type="checkbox" checked={opt.animate} onChange={(e) => setOpt({ ...opt, animate: e.target.checked })} />animate</label>
           {!builtin && draft?.source !== "strips" && <button className="btn" disabled={busy} onClick={reprocess}>Re-process</button>}
+        </Row>
+        <Row label="Share" desc="Export your character as a .wanwanchan file, or import a .wanwanchan / .pixelmate pack.">
+          {!builtin && <button className="btn" onClick={doExport}>Export…</button>}
+          <button className="btn" onClick={doImportPack}>Import pack…</button>
         </Row>
         <Row label="Characters folder" desc="Drop folders with sheet.png + sprite.json here, no app changes needed.">
           <button className="btn" onClick={() => openCharactersDir()}>Show in Finder</button>

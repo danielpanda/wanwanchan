@@ -1,0 +1,26 @@
+[
+  {
+    "id": "cat",
+    "name": "Pixel Frenchie"
+  },
+  {
+    "id": "kuro",
+    "name": "Kuro (black cat)"
+  },
+  {
+    "id": "shiro",
+    "name": "Shiro (white cat)"
+  },
+  {
+    "id": "abu",
+    "name": "Abu (gray tabby)"
+  },
+  {
+    "id": "bunny",
+    "name": "Bunny"
+  },
+  {
+    "id": "puppy",
+    "name": "Puppy"
+  }
+]

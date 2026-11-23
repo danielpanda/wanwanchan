@@ -78,14 +78,16 @@ pub fn classify(raw: &str, p: &Value) -> Option<(&'static str, Option<String>)> 
     normalize(raw).map(|s| (s, None))
 }
 
-pub fn dispatch(app: &AppHandle, agent: &str, raw: &str, payload: &Value) -> Result<&'static str, String> {
+pub fn dispatch(app: &AppHandle, agent: &str, raw: &str, payload: &Value, bid: Option<&str>) -> Result<&'static str, String> {
     let (state, detail) = classify(raw, payload).ok_or_else(|| format!("unknown event '{raw}'"))?;
     if state == "ignored" {
         return Ok(state);
     }
     let agent: String = agent.chars().filter(|c| c.is_ascii_alphanumeric()).take(24).collect();
     let agent = if agent.is_empty() { "custom".to_string() } else { agent.to_lowercase() };
-    let _ = app.emit("agent-event", json!({ "agent": agent, "state": state, "raw": raw, "detail": detail }));
+    // bundle id of the app that spawned the hook (terminal / editor), used to jump back to it
+    let bid = bid.filter(|b| !b.is_empty() && b.len() <= 80 && b.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-'));
+    let _ = app.emit("agent-event", json!({ "agent": agent, "state": state, "raw": raw, "detail": detail, "bid": bid }));
     Ok(state)
 }
 
@@ -119,7 +121,7 @@ pub fn start(app: AppHandle, port: u16) -> Result<ServerHandle, String> {
                         .find_map(|k| payload.get(*k).and_then(Value::as_str).map(String::from))
                 });
                 let res = match ev {
-                    Some(e) => dispatch(&app, agent.as_deref().unwrap_or("custom"), &e, &payload),
+                    Some(e) => dispatch(&app, agent.as_deref().unwrap_or("custom"), &e, &payload, query_param(&url, "bid").as_deref()),
                     None => Err("missing event".into()),
                 };
                 let _ = match res {
@@ -152,7 +154,7 @@ fi
 if [ "$AGENT" = "claude" ]; then
   # Claude Code pipes the hook JSON on stdin; forward it so the pet knows which tool / question.
   head -c 1048576 2>/dev/null | curl -s -m 1 -X POST -H 'Content-Type: application/json' --data-binary @- \
-    "http://127.0.0.1:${PORT}/event?agent=claude&event=${EVENT}" >/dev/null 2>&1
+    "http://127.0.0.1:${PORT}/event?agent=claude&event=${EVENT}&bid=${__CFBundleIdentifier}" >/dev/null 2>&1
   exit 0
 fi
 if [ "$AGENT" = "cursor" ]; then
@@ -163,7 +165,7 @@ if [ "$AGENT" = "cursor" ]; then
   esac
   printf '{"continue":true,"permission":"allow"}\n'
 fi
-[ -n "$EVENT" ] && curl -s -m 1 -X POST "http://127.0.0.1:${PORT}/event?agent=${AGENT}&event=${EVENT}" >/dev/null 2>&1
+[ -n "$EVENT" ] && curl -s -m 1 -X POST "http://127.0.0.1:${PORT}/event?agent=${AGENT}&event=${EVENT}&bid=${__CFBundleIdentifier}" >/dev/null 2>&1
 exit 0
 "#;
 

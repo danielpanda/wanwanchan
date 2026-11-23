@@ -55,7 +55,36 @@ export interface NotifySettings {
   pinned: string;
 }
 
-export interface PomodoroSettings { focus: number; shortBreak: number; longBreak: number; longEvery: number }
+export interface FocusSettings {
+  workMin: number;
+  breakMin: number;
+  longBreakMin: number;
+  /** Work sessions before a long break. */
+  cycles: number;
+  badge: boolean;
+}
+export const DEFAULT_FOCUS: FocusSettings = { workMin: 25, breakMin: 5, longBreakMin: 15, cycles: 4, badge: true };
+
+export interface BondState {
+  xp: number;
+  /** Local date (YYYY-MM-DD) the per-day caps below belong to. */
+  day: string;
+  dayXp: Record<string, number>;
+  streak: number;
+  /** Last day the daily bonus was claimed. */
+  last: string;
+}
+export const DEFAULT_BOND: BondState = { xp: 0, day: "", dayXp: {}, streak: 0, last: "" };
+
+export interface CalendarSettings {
+  enabled: boolean;
+  /** Published .ics feed URLs (Outlook, Google, iCloud...). */
+  urls: string[];
+  leadMin: number;
+  /** Show event titles in bubbles (off = just "Meeting"). */
+  titles: boolean;
+}
+export const DEFAULT_CALENDAR: CalendarSettings = { enabled: false, urls: [], leadMin: 5, titles: true };
 
 export const DEFAULT_REMINDERS: Reminder[] = [
   { id: "water", emoji: "", kind: "interval", every: 45, time: "", text: "", enabled: true, builtin: true },
@@ -84,8 +113,6 @@ export const DEFAULT_NOTIFY: NotifySettings = {
   pinned: "",
 };
 
-export const DEFAULT_POMODORO: PomodoroSettings = { focus: 25, shortBreak: 5, longBreak: 15, longEvery: 4 };
-
 export interface Settings {
   enabled: boolean;
   launchAtLogin: boolean;
@@ -108,7 +135,11 @@ export interface Settings {
   peekMode: boolean;
   agent: { enabled: boolean; port: number; agents: Record<AgentId, boolean> };
   notify: NotifySettings;
-  pomodoro: PomodoroSettings;
+  focus: FocusSettings;
+  calendar: CalendarSettings;
+  bond: BondState;
+  /** Equipped accessory ids (only those unlocked by the bond level are drawn). */
+  accessories: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -136,7 +167,10 @@ export const DEFAULT_SETTINGS: Settings = {
     agents: { claude: true, codex: true, cursor: true, antigravity: true, opencode: true, custom: true },
   },
   notify: DEFAULT_NOTIFY,
-  pomodoro: DEFAULT_POMODORO,
+  focus: DEFAULT_FOCUS,
+  calendar: DEFAULT_CALENDAR,
+  bond: DEFAULT_BOND,
+  accessories: [],
 };
 
 export function withDefaults(raw: Partial<Settings> | null | undefined): Settings {
@@ -150,13 +184,16 @@ export function withDefaults(raw: Partial<Settings> | null | undefined): Setting
       ...(r.agent ?? {}),
       agents: { ...DEFAULT_SETTINGS.agent.agents, ...(r.agent?.agents ?? {}) },
     },
+    focus: { ...DEFAULT_FOCUS, ...(r.focus ?? {}) },
+    calendar: { ...DEFAULT_CALENDAR, ...(r.calendar ?? {}), urls: Array.isArray(r.calendar?.urls) ? r.calendar!.urls.filter((u) => typeof u === "string") : [] },
+    bond: { ...DEFAULT_BOND, ...(r.bond ?? {}), dayXp: { ...(r.bond?.dayXp ?? {}) } },
+    accessories: Array.isArray(r.accessories) ? r.accessories.filter((a) => typeof a === "string") : [],
     notify: {
       ...DEFAULT_NOTIFY,
       ...(r.notify ?? {}),
       quiet: { ...DEFAULT_NOTIFY.quiet, ...(r.notify?.quiet ?? {}) },
       reminders: Array.isArray(r.notify?.reminders) ? r.notify!.reminders : DEFAULT_NOTIFY.reminders,
     },
-    pomodoro: { ...DEFAULT_POMODORO, ...(r.pomodoro ?? {}) },
   };
 }
 
@@ -185,4 +222,6 @@ export interface SpriteConfig {
   quirks: string[];
   /** "strips": built one row per state (the state-by-state importer). */
   source?: "strips";
+  /** Per-frame head position (x, y in frame pixels) for accessories; bundled characters only. */
+  anchors?: { x: number; y: number }[];
 }

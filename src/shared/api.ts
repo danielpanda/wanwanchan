@@ -25,6 +25,14 @@ export const listMonitors = () => invoke<{ name: string; width: number; height: 
 export const petAction = (name: string) => invoke<void>("pet_action", { name });
 export const agentEvent = (agent: string, event: string) => invoke<string>("agent_event", { agent, event });
 export const agentHelperPath = () => invoke<string | null>("agent_helper_path");
+export const exportCharacterPack = (id: string, path: string) => invoke<void>("export_character_pack", { id, path });
+export const importCharacterPack = (path: string) => invoke<{ id: string; name: string }>("import_character_pack", { path });
+export const focusApp = (bid: string) => invoke<void>("focus_app", { bid });
+export const fetchUrlText = (url: string) => invoke<string>("fetch_url_text", { url });
+export const openUrl = (url: string) => invoke<void>("open_url", { url });
+export const listApps = () => invoke<string[]>("list_apps");
+export const openApp = (name: string) => invoke<void>("open_app", { name });
+export const focusPet = () => invoke<void>("focus_pet");
 export const integrationStatus = () => invoke<Record<string, boolean>>("integration_status");
 export const integrationSet = (agent: string, install: boolean) => invoke<string>("integration_set", { agent, install });
 export const keyboardPermission = () => invoke<boolean>("keyboard_permission");

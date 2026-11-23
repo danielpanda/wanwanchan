@@ -8,6 +8,7 @@ export class Bubble {
   private typer: number | undefined;
   private hideTimer: number | undefined;
   private onClose: (() => void) | null = null;
+  private onBody: (() => void) | null = null;
   private audio: AudioContext | null = null;
   visible = false;
 
@@ -35,13 +36,20 @@ export class Bubble {
     this.btns.className = "btns";
     this.el.append(this.textEl, this.btns);
     this.el.addEventListener("pointerdown", (e) => e.stopPropagation());
-    this.el.addEventListener("click", (e) => { if (!(e.target as HTMLElement).closest("button")) this.hide(); });
+    this.el.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).closest("button")) return;
+      const go = this.onBody;
+      this.hide();
+      go?.();
+    });
     document.body.appendChild(this.el);
   }
 
-  show(text: string, opts: { buttons?: BubbleButton[]; seconds: number; sound?: boolean; onClose?: () => void }) {
+  show(text: string, opts: { buttons?: BubbleButton[]; seconds: number; sound?: boolean; onClose?: () => void; onClick?: () => void }) {
     this.hide();
     this.onClose = opts.onClose ?? null;
+    this.onBody = opts.onClick ?? null;
+    this.el.style.cursor = opts.onClick ? "pointer" : "default";
     this.btns.replaceChildren();
     for (const b of opts.buttons ?? []) {
       const el = document.createElement("button");

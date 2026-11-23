@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { inQuiet, nextDue, parseHM, quietEnd, sig } from "../src/pet/reminders";
 import { pick, reminderText, timeGreeting, withName } from "../src/shared/messages";
 import { fmtDuration, Notifier, type Host, type PresentOpts } from "../src/pet/notify";
@@ -200,5 +200,39 @@ describe("agent bubbles", () => {
     expect(a.shown[0].text).not.toMatch(/\(/);
     const b = harness(); b.n.agent("waiting", "claude", 300);
     expect(b.shown[0].text).not.toMatch(/\(\d/);
+  });
+});
+
+describe("calendar alerts", () => {
+  afterEach(() => vi.useRealTimers());
+  it("alerts shortly before a meeting with a Join button, and never repeats it", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 23, 9, 0));
+    const { n, shown } = harness();
+    const start = Date.now() + 30 * 60_000;
+    const ev = { uid: "a", title: "Standup", start, end: start + 30 * 60_000, link: "https://teams.microsoft.com/l/x" };
+    n.setCalendar([ev], 5);
+    vi.advanceTimersByTime(24 * 60_000);
+    expect(shown).toHaveLength(0);
+    vi.advanceTimersByTime(2 * 60_000);
+    expect(shown).toHaveLength(1);
+    expect(shown[0].text).toMatch(/Standup/);
+    expect(shown[0].text).toMatch(/\(5 menit lagi\)/);
+    expect(shown[0].o.buttons?.map((b) => b.label)).toEqual(["Gabung", "OK"]);
+    shown[0].o.onClose();
+    n.setCalendar([ev], 5); // a refresh brings the same event back
+    vi.advanceTimersByTime(60 * 60_000);
+    expect(shown).toHaveLength(1);
+  });
+  it("skips events that already started and drops removed ones", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 23, 9, 0));
+    const { n, shown } = harness();
+    const now = Date.now();
+    n.setCalendar([{ uid: "old", title: "Old", start: now - 10 * 60_000, end: now }], 5);
+    n.setCalendar([{ uid: "b", title: "B", start: now + 20 * 60_000, end: now + 50 * 60_000 }], 5);
+    n.setCalendar([], 5); // cancelled / removed from the feed
+    vi.advanceTimersByTime(3 * 3600_000);
+    expect(shown).toHaveLength(0);
   });
 });

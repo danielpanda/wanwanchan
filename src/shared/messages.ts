@@ -26,10 +26,12 @@ const LINES = {
     snooze: ["Oke, nanti aku ingetin lagi", "Siap, 10 menit lagi ya"],
     sit: ["Duduk manis~", "Oke, aku duduk di sini ya"],
     stand: ["Yuk jalan lagi!", "Bebas deh~"],
-    pomoFocus: ["Fokus {m} menit, mulai! Aku jagain"],
-    pomoBreak: ["Fokus selesai! Istirahat {m} menit"],
-    pomoLong: ["Kerja bagus! Istirahat panjang {m} menit"],
-    pomoStop: ["Pomodoro berhenti. Sesi selesai: {n}"],
+    focusStart: ["Fokus dimulai! Aku temenin", "Gas fokus! Aku jagain"],
+    breakStart: ["Waktunya istirahat! Regangin badan dulu", "Sesi selesai, hebat! Istirahat ya"],
+    longBreak: ["Istirahat panjang! Kamu keren banget", "Empat sesi beres! Ngopi dulu yuk"],
+    focusBack: ["Yuk lanjut fokus!", "Istirahat selesai, gas lagi"],
+    focusStop: ["Sesi fokus dihentikan"],
+    levelUp: ["Naik level! Kedekatan kita bertambah", "Level baru! Aku makin sayang kamu"],
     ok: "OK", later: "Nanti 10m",
   },
   en: {
@@ -55,10 +57,12 @@ const LINES = {
     snooze: ["Okay, I'll remind you later", "Got it, 10 more minutes"],
     sit: ["Sitting pretty~", "Okay, I'll stay right here"],
     stand: ["Let's roam again!", "Free at last~"],
-    pomoFocus: ["Focus for {m} minutes, go! I'll keep watch"],
-    pomoBreak: ["Focus done! Take a {m}-minute break"],
-    pomoLong: ["Great work! Long break: {m} minutes"],
-    pomoStop: ["Pomodoro stopped. Sessions done: {n}"],
+    focusStart: ["Focus time! I'm with you", "Let's focus! I've got your back"],
+    breakStart: ["Break time! Stretch a little", "Session done, nice! Rest up"],
+    longBreak: ["Long break! You're amazing", "Four sessions done! Grab a coffee"],
+    focusBack: ["Back to focus!", "Break's over, let's go"],
+    focusStop: ["Focus session stopped"],
+    levelUp: ["Level up! We're getting closer", "New level! I like you even more"],
     ok: "OK", later: "Later 10m",
   },
 } as const;
@@ -92,6 +96,14 @@ export const REMINDER_NAMES: Record<Lang, Record<string, string>> = {
   id: { water: "Minum air", eyes: "Istirahat mata (20-20-20)", posture: "Cek postur", stretch: "Peregangan", lunch: "Makan siang", sleep: "Waktu tidur" },
   en: { water: "Drink water", eyes: "Eye rest (20-20-20)", posture: "Posture check", stretch: "Stretch", lunch: "Lunch", sleep: "Bedtime" },
 };
+
+export function calendarText(title: string, start: number, minsLeft: number, lang: Lang, showTitle: boolean): string {
+  const t = new Date(start);
+  const hhmm = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+  const name = showTitle ? title : lang === "id" ? "Pertemuan" : "Meeting";
+  const when = minsLeft > 0 ? (lang === "id" ? `${minsLeft} menit lagi` : `in ${minsLeft} min`) : lang === "id" ? "sekarang!" : "now!";
+  return `${name} · ${hhmm} (${when})`;
+}
 
 export function timeGreeting(date: Date, lang: Lang, rnd: () => number = Math.random): string {
   const h = date.getHours();

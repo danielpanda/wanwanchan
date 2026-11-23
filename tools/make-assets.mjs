@@ -138,6 +138,7 @@ function cat(p = {}) {
   };
   const L = new Layer();
   const hcx = hcxBase + d.hx, hcy = 12.5 + d.hy + d.oy;
+  L.head = { x: Math.round(hcx), y: Math.round(d.pose === "sleep" ? 19 + d.oy : hcy) };
   const by = d.bodyY + d.oy;
 
   const tail = () => {
@@ -328,6 +329,7 @@ function sparkle(t) {
 }
 function fr(c, front = [], back = []) {
   const f = new Layer();
+  f.head = c.head;
   for (const b of back) f.over(b);
   f.over(c);
   for (const x of front) f.over(x);
@@ -415,11 +417,13 @@ const json = {
   anchor: { x: 0.5, y: 1 },
   animations: {},
   states: {},
+  anchors: [],
 };
 for (const a of anims) {
   json.animations[a.name] = { start: idx, count: a.frames.length, fps: a.fps, loop: a.loop };
   json.states[a.name] = a.name;
   for (const f of a.frames) {
+    json.anchors.push(f.head ? { x: f.head.x, y: f.head.y } : { x: 16, y: 12 });
     const cx = (idx % COLS) * S,
       cy = Math.floor(idx / COLS) * S;
     for (let y = 0; y < S; y++)

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { keyboardPermission, openPrivacySettings, petAction, requestKeyboardPermission } from "../../shared/api";
+import { keyboardPermission, openPrivacySettings, requestKeyboardPermission } from "../../shared/api";
 import { Group, Page, Row, Slider, Toggle } from "../ui";
 import type { TabProps } from "./types";
 
@@ -25,17 +25,6 @@ export function Behavior({ settings: s, update }: TabProps) {
         <Row label="Peek from the edge" desc="For videos and focus: hides at the right screen edge, stays quiet, and only comes out for reminders. Also in the menu bar.">
           <Toggle value={s.peekMode} onChange={(v) => update({ peekMode: v })} />
         </Row>
-      </Group>
-      <Group title="Pomodoro">
-        <Row label="Timer" desc="A small clock floats above the character; it tells you when to focus and when to rest. Also in the menu bar.">
-          <button className="btn primary" onClick={() => petAction("pomodoro:start")}>Start</button>
-          <button className="btn" onClick={() => petAction("pomodoro:skip")}>Skip phase</button>
-          <button className="btn" onClick={() => petAction("pomodoro:stop")}>Stop</button>
-        </Row>
-        <Row label="Focus"><Slider value={s.pomodoro.focus} min={5} max={90} step={5} format={(v) => `${v} min`} onChange={(v) => update({ pomodoro: { focus: v } })} /></Row>
-        <Row label="Short break"><Slider value={s.pomodoro.shortBreak} min={1} max={30} format={(v) => `${v} min`} onChange={(v) => update({ pomodoro: { shortBreak: v } })} /></Row>
-        <Row label="Long break"><Slider value={s.pomodoro.longBreak} min={5} max={60} step={5} format={(v) => `${v} min`} onChange={(v) => update({ pomodoro: { longBreak: v } })} /></Row>
-        <Row label="Long break every"><Slider value={s.pomodoro.longEvery} min={2} max={8} format={(v) => `${v} sessions`} onChange={(v) => update({ pomodoro: { longEvery: v } })} /></Row>
       </Group>
       <Group title="Keyboard">
         <Row label="Keyboard interaction" desc="Type-along animation, excited when typing fast. Only the fact that a key was pressed is detected, never which key.">
