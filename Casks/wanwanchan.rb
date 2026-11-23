@@ -8,7 +8,7 @@
 #        brew tap YOUR_GITHUB_USER/wanwanchan
 #        brew install --cask wanwanchan
 cask "wanwanchan" do
-  version "0.2.1"
+  version "0.2.2"
   sha256 "REPLACE_WITH_SHA256_OF_DMG"
 
   url "https://github.com/YOUR_GITHUB_USER/wanwanchan/releases/download/v#{version}/WanWan-chan_#{version}_universal.dmg"

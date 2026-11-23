@@ -10,7 +10,7 @@ A lightweight pixel french bulldog that lives on your macOS desktop. Transparent
 
 ## Install
 
-**From a DMG** – open `WanWan-chan_0.2.1_aarch64.dmg`, drag WanWan-chan to Applications, launch it.
+**From a DMG** – open `WanWan-chan_0.2.2_universal.dmg`, drag WanWan-chan to Applications, launch it.
 Builds from this repo are ad-hoc signed, not notarized. If Gatekeeper blocks a *downloaded* copy: right-click → Open, or
 `xattr -dr com.apple.quarantine /Applications/WanWan-chan.app`.
 

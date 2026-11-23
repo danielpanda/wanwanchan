@@ -35,7 +35,7 @@ export function App() {
             {t.label}
           </button>
         ))}
-        <div className="mt-6 px-2 text-[11px]" style={{ color: "var(--sub)" }}>WanWan-chan 0.2.1</div>
+        <div className="mt-6 px-2 text-[11px]" style={{ color: "var(--sub)" }}>WanWan-chan 0.2.2</div>
       </nav>
       <main className="content">
         {tab === "general" && <General {...p} />}
