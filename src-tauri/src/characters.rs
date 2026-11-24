@@ -8,6 +8,8 @@ use tauri::{AppHandle, Manager};
 
 const MAX_PNG_BYTES: u64 = 20 * 1024 * 1024;
 const MAX_DIM: u32 = 8192;
+const MAX_SOUND_BYTES: u64 = 2 * 1024 * 1024;
+const SOUND_TYPES: [(&str, &str); 4] = [("mp3", "audio/mpeg"), ("wav", "audio/wav"), ("m4a", "audio/mp4"), ("ogg", "audio/ogg")];
 
 pub fn dir(app: &AppHandle) -> Result<PathBuf, String> {
     let d = app.path().app_data_dir().map_err(|e| e.to_string())?.join("characters");
@@ -43,7 +45,7 @@ pub fn png_size(bytes: &[u8]) -> Result<(u32, u32), String> {
 }
 
 pub fn list(app: &AppHandle) -> Result<Vec<Value>, String> {
-    let mut out = vec![json!({"id": "cat", "name": "Pixel Cat", "builtin": true})];
+    let mut out = vec![json!({"id": "cat", "name": "Pixel Frenchie", "builtin": true})];
     for entry in fs::read_dir(dir(app)?).map_err(|e| e.to_string())?.flatten() {
         let p = entry.path();
         let id = entry.file_name().to_string_lossy().to_string();
@@ -69,7 +71,44 @@ pub fn load(app: &AppHandle, id: &str) -> Result<Value, String> {
         .map_err(|e| format!("sprite.json: {e}"))?;
     let png = fs::read(p.join("sheet.png")).map_err(|e| e.to_string())?;
     png_size(&png)?;
-    Ok(json!({"config": config, "image": format!("data:image/png;base64,{}", STANDARD.encode(png))}))
+    let sound = SOUND_TYPES.iter().find_map(|(ext, mime)| {
+        let bytes = fs::read(p.join(format!("sound.{ext}"))).ok()?;
+        Some(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
+    });
+    Ok(json!({"config": config, "image": format!("data:image/png;base64,{}", STANDARD.encode(png)), "sound": sound}))
+}
+
+/// Copy an audio file in as `<id>/sound.<ext>` (bubble sound); `None` removes it.
+pub fn set_sound(app: &AppHandle, id: &str, path: Option<&str>) -> Result<(), String> {
+    if !valid_id(id) || id == "cat" {
+        return Err("This character cannot be modified".into());
+    }
+    let d = dir(app)?.join(id);
+    if !d.is_dir() {
+        return Err("Character not found".into());
+    }
+    let new = match path {
+        Some(path) => {
+            let src = PathBuf::from(path);
+            let ext = src.extension().and_then(|e| e.to_str()).map(str::to_lowercase).unwrap_or_default();
+            if !SOUND_TYPES.iter().any(|(e, _)| *e == ext) {
+                return Err("Use an MP3, WAV, M4A or OGG file".into());
+            }
+            let meta = fs::metadata(&src).map_err(|e| e.to_string())?;
+            if !meta.is_file() || meta.len() > MAX_SOUND_BYTES {
+                return Err("File is missing or larger than 2 MB".into());
+            }
+            Some((ext, fs::read(&src).map_err(|e| e.to_string())?))
+        }
+        None => None,
+    };
+    for (ext, _) in SOUND_TYPES {
+        let _ = fs::remove_file(d.join(format!("sound.{ext}")));
+    }
+    if let Some((ext, bytes)) = new {
+        fs::write(d.join(format!("sound.{ext}")), bytes).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 pub fn import(app: &AppHandle, path: &str, name: &str) -> Result<Value, String> {
@@ -80,11 +119,7 @@ pub fn import(app: &AppHandle, path: &str, name: &str) -> Result<Value, String> 
     }
     let bytes = fs::read(&src).map_err(|e| e.to_string())?;
     let (w, h) = png_size(&bytes)?;
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() % 100000)
-        .unwrap_or(0);
-    let id = format!("{}-{}", slug(name), stamp);
+    let id = new_id(name);
     let d = dir(app)?.join(&id);
     fs::create_dir_all(&d).map_err(|e| e.to_string())?;
     fs::write(d.join("sheet.png"), &bytes).map_err(|e| e.to_string())?;
@@ -99,6 +134,14 @@ pub fn import(app: &AppHandle, path: &str, name: &str) -> Result<Value, String> 
     });
     fs::write(d.join("sprite.json"), serde_json::to_string_pretty(&config).unwrap()).map_err(|e| e.to_string())?;
     Ok(json!({"id": id, "width": w, "height": h}))
+}
+
+fn new_id(name: &str) -> String {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() % 100000)
+        .unwrap_or(0);
+    format!("{}-{}", slug(name), stamp)
 }
 
 fn decode_data_url(data_url: &str) -> Result<Vec<u8>, String> {
@@ -134,6 +177,46 @@ pub fn load_original(app: &AppHandle, id: &str) -> Result<String, String> {
     Ok(format!("data:image/png;base64,{}", STANDARD.encode(bytes)))
 }
 
+const PACK_FORMAT: &str = "wanwanchan-character";
+const COMPAT_PACK_FORMAT: &str = "pixelmate-character";
+
+/// Write a single shareable `.wanwanchan` file (JSON: config + PNG as a data URL).
+pub fn export_pack(app: &AppHandle, id: &str, dest: &str) -> Result<(), String> {
+    let loaded = load(app, id)?;
+    let name = loaded["config"].get("name").and_then(Value::as_str).unwrap_or("Character").to_string();
+    let pack = json!({"format": PACK_FORMAT, "version": 1, "name": name, "config": loaded["config"], "image": loaded["image"]});
+    let dest = PathBuf::from(dest);
+    if dest.extension().and_then(|e| e.to_str()) != Some("wanwanchan") {
+        return Err("Pack files must end in .wanwanchan".into());
+    }
+    fs::write(dest, serde_json::to_string(&pack).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+}
+
+/// Import a `.wanwanchan` (or compatible `.pixelmate`) pack as a new character.
+pub fn import_pack(app: &AppHandle, path: &str) -> Result<Value, String> {
+    let src = PathBuf::from(path);
+    let meta = fs::metadata(&src).map_err(|e| e.to_string())?;
+    if !meta.is_file() || meta.len() > 28 * 1024 * 1024 {
+        return Err("File is missing or too large".into());
+    }
+    let pack: Value = serde_json::from_str(&fs::read_to_string(&src).map_err(|e| e.to_string())?)
+        .map_err(|_| "This is not a WanWan-chan character pack".to_string())?;
+    match pack.get("format").and_then(Value::as_str) {
+        Some(PACK_FORMAT) | Some(COMPAT_PACK_FORMAT) => {}
+        _ => return Err("This is not a WanWan-chan character pack".into()),
+    }
+    let png = decode_data_url(pack.get("image").and_then(Value::as_str).ok_or("pack has no image")?)?;
+    let config = pack.get("config").cloned().ok_or("pack has no config")?;
+    let name = pack.get("name").and_then(Value::as_str).unwrap_or("Imported").chars().take(40).collect::<String>();
+    let id = new_id(&name);
+    let d = dir(app)?.join(&id);
+    fs::create_dir_all(&d).map_err(|e| e.to_string())?;
+    fs::write(d.join("sheet.png"), &png).map_err(|e| e.to_string())?;
+    fs::write(d.join("original.png"), &png).map_err(|e| e.to_string())?;
+    fs::write(d.join("sprite.json"), serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    Ok(json!({"id": id, "name": name}))
+}
+
 pub fn save_config(app: &AppHandle, id: &str, config: &Value) -> Result<(), String> {
     if !valid_id(id) || id == "cat" {
         return Err("This character cannot be modified".into());
@@ -156,6 +239,64 @@ pub fn delete(app: &AppHandle, id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Returns (width, height) from a JPEG's SOF marker, or an error if it is not a sane JPEG.
+pub fn jpeg_size(bytes: &[u8]) -> Result<(u32, u32), String> {
+    if bytes.len() < 4 || bytes[..3] != [0xFF, 0xD8, 0xFF] {
+        return Err("Not a valid JPEG file".into());
+    }
+    let mut i = 2;
+    while i + 9 < bytes.len() {
+        if bytes[i] != 0xFF {
+            i += 1;
+            continue;
+        }
+        let m = bytes[i + 1];
+        // SOF0..SOF15 carry the size (C4 = DHT, C8 = JPG, CC = DAC are not frames)
+        if (0xC0..=0xCF).contains(&m) && m != 0xC4 && m != 0xC8 && m != 0xCC {
+            let h = u16::from_be_bytes([bytes[i + 5], bytes[i + 6]]) as u32;
+            let w = u16::from_be_bytes([bytes[i + 7], bytes[i + 8]]) as u32;
+            if w == 0 || h == 0 || w > MAX_DIM || h > MAX_DIM {
+                return Err(format!("Image size {w}x{h} is not supported (max {MAX_DIM}px)"));
+            }
+            return Ok((w, h));
+        }
+        if m == 0xD8 || m == 0x01 || (0xD0..=0xD7).contains(&m) || m == 0xFF {
+            i += if m == 0xFF { 1 } else { 2 };
+            continue;
+        }
+        i += 2 + u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]) as usize;
+    }
+    Err("Not a valid JPEG file".into())
+}
+
+/// A user-picked PNG or JPEG (one animation row) as a data URL, for processing in the settings window.
+pub fn read_image(path: &str) -> Result<String, String> {
+    let p = PathBuf::from(path);
+    let meta = fs::metadata(&p).map_err(|e| e.to_string())?;
+    if !meta.is_file() || meta.len() > MAX_PNG_BYTES {
+        return Err("File is missing or larger than 20 MB".into());
+    }
+    let bytes = fs::read(&p).map_err(|e| e.to_string())?;
+    let mime = if png_size(&bytes).is_ok() {
+        "image/png"
+    } else {
+        jpeg_size(&bytes).map_err(|_| "Not a PNG or JPEG image".to_string())?;
+        "image/jpeg"
+    };
+    Ok(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
+}
+
+/// New character from an already processed sheet (the row importer builds it in the settings window).
+pub fn create(app: &AppHandle, name: &str, data_url: &str, config: &Value) -> Result<String, String> {
+    let png = decode_data_url(data_url)?;
+    let id = new_id(name);
+    let d = dir(app)?.join(&id);
+    fs::create_dir_all(&d).map_err(|e| e.to_string())?;
+    fs::write(d.join("sheet.png"), png).map_err(|e| e.to_string())?;
+    fs::write(d.join("sprite.json"), serde_json::to_string_pretty(config).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
 pub fn read_text(path: &str) -> Result<String, String> {
     let p = PathBuf::from(path);
     let meta = fs::metadata(&p).map_err(|e| e.to_string())?;
@@ -168,6 +309,14 @@ pub fn read_text(path: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reads_jpeg_size() {
+        // SOI, APP0 (len 4), SOF0: len 17, precision 8, h=256, w=1024
+        let j = [0xFF, 0xD8, 0xFF, 0xE0, 0, 4, 0, 0, 0xFF, 0xC0, 0, 17, 8, 1, 0, 4, 0, 3, 0, 0, 0, 0];
+        assert_eq!(jpeg_size(&j).unwrap(), (1024, 256));
+        assert!(jpeg_size(b"not a jpeg at all").is_err());
+    }
+
     #[test]
     fn rejects_non_png() {
         assert!(png_size(b"hello world, not a png at all!").is_err());

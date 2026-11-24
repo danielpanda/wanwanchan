@@ -1,4 +1,4 @@
-// Generates the default pixel cat sprite sheet, sprite.json, app icon and tray icon.
+// Generates the default pixel frenchie sprite sheet, sprite.json, app icon and tray icon.
 // Usage: node tools/make-assets.mjs
 import { deflateSync } from "node:zlib";
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -51,11 +51,11 @@ function encodePNG(w, h, rgba) {
 
 // ---------- palette ----------
 const PAL = {
-  O: [92, 54, 58], // soft outline
-  b: [250, 178, 104], // orange base
-  d: [226, 134, 70], // stripes / shade
-  f: [196, 112, 54],
-  l: [255, 238, 210], // cream
+  O: [44, 28, 30], // dark outline
+  b: [132, 88, 58], // brown base
+  d: [52, 38, 36], // black-brown: ears, mask, brindle, shade
+  f: [96, 64, 44],
+  l: [226, 184, 136], // tan
   p: [255, 150, 172], // pink
   P: [255, 122, 150], // blush
   e: [52, 34, 60], // eye
@@ -126,7 +126,7 @@ class Layer {
   }
 }
 
-// ---------- cat drawing (chibi, front-facing; direction is shown by head/pupil lean + mirroring) ----------
+// ---------- dog drawing (french bulldog, chibi, front-facing; direction is shown by head/pupil lean + mirroring) ----------
 const hcxBase = 16;
 function cat(p = {}) {
   const d = {
@@ -138,22 +138,18 @@ function cat(p = {}) {
   };
   const L = new Layer();
   const hcx = hcxBase + d.hx, hcy = 12.5 + d.hy + d.oy;
+  L.head = { x: Math.round(hcx), y: Math.round(d.pose === "sleep" ? 19 + d.oy : hcy) };
   const by = d.bodyY + d.oy;
 
   const tail = () => {
-    // tail on the left, white tip
-    const sway = Math.round(d.tail * 2);
-    const tipX = 3 + sway, tipY = 17 - Math.round(d.tailUp * 5) + (d.pose === "sit" ? 5 : 0);
-    L.line(9, Math.round(by + 1), 5, Math.round(by - 1), "b", 2);
-    L.line(5, Math.round(by - 1), tipX, tipY + 3, "b", 2);
-    L.line(tipX, tipY + 3, tipX, tipY, "b", 2);
-    L.rect(tipX, tipY, 2, 2, "l");
+    // short bulldog stub on the left; wags with d.tail, lifts with d.tailUp
+    const tx = 7 + Math.round(d.tail), ty = Math.round(by - 1 - d.tailUp * 3) + (d.pose === "sit" ? 4 : 0);
+    L.rect(tx, ty, 3, 3, "b");
+    L.set(tx, ty, "d");
   };
-
   if (d.pose === "sleep") {
     const sy = 26 + d.oy;
-    L.line(27, sy + 1, 29, sy - 3, "b", 2); // tail along the right
-    L.rect(29, sy - 4, 2, 2, "l");
+    L.rect(28, sy - 2, 3, 3, "b"); // stub on the right
     L.ell(16, sy, 12.5, 4.8, "b");
     L.ell(16, sy + 1.5, 9, 2.5, "l");
     drawHead(L, 16, 19 + d.oy, { ...d, eye: "closed", mouth: "smile", hx: 0 }, true);
@@ -171,15 +167,14 @@ function cat(p = {}) {
   if (d.hang) {
     for (const sx of [11, 19]) L.rect(sx + d.bodyDx + (sx === 11 ? -d.hang * 0 : 0), by + 3, 2, 31 - Math.round(by + 3), "b"), L.rect(sx, 29, 3, 2, "l");
   } else if (d.pose === "sit") {
-    L.ell(13.5, 28.6, 2.4, 1.8, "w");
-    L.ell(18.5, 28.6, 2.4, 1.8, "w");
+    L.ell(13.5, 28.6, 2.4, 1.8, "l");
+    L.ell(18.5, 28.6, 2.4, 1.8, "l");
   } else {
-    L.ell(11.5 + d.pawDx[0], 28.4 - d.paws[0], 2.5, 1.9, "w");
-    L.ell(20.5 + d.pawDx[1], 28.4 - d.paws[1], 2.5, 1.9, "w");
+    L.ell(11.5 + d.pawDx[0], 28.4 - d.paws[0], 2.5, 1.9, "l");
+    L.ell(20.5 + d.pawDx[1], 28.4 - d.paws[1], 2.5, 1.9, "l");
   }
   if (d.tailFront) {
-    L.line(24, 29, 18, 30, "b", 2);
-    L.rect(16, 29, 2, 2, "l");
+    L.rect(22, 28, 3, 3, "b");
   }
   drawHead(L, hcx, hcy, d, false);
   if (d.pawsUp) {
@@ -196,23 +191,21 @@ function cat(p = {}) {
     L.rect(hcx + 6, hcy + 1 - gy, 3, 2, "l");
   }
   L.outline();
-  // whiskers (drawn after outline so they stay thin)
-  const wy = Math.round(hcy + 3);
-  for (const [x, y] of [[hcx - 13, wy], [hcx - 12, wy], [hcx - 13, wy + 2], [hcx - 12, wy + 2], [hcx + 12, wy], [hcx + 13, wy], [hcx + 12, wy + 2], [hcx + 13, wy + 2]]) if (!L.get(x, y)) L.set(x, y, "d");
   return L;
 }
 
 function drawHead(L, hcx, hcy, d, flat) {
-  // ears (drawn first so the head overlaps their base)
+  // upright bat ears (drawn first so the head overlaps their base); d.ear[i] > 0 folds that ear down
   const [el, er] = d.ear;
-  L.ear(hcx - 8 + Math.min(0, el) * 2, hcy - 12 + Math.max(0, -el) * 0 + Math.max(0, el) * 2, 7, 7, "b");
-  L.ear(hcx + 8 + Math.max(0, er) * 2 * 0 - Math.min(0, er) * 0 + Math.abs(Math.min(0, er)) * 0 + Math.max(0, er) * 2, hcy - 12 + Math.max(0, er) * 2, 7, 7, "b");
-  L.ear(hcx - 8, hcy - 10 + Math.max(0, el) * 2, 4, 3, "p");
-  L.ear(hcx + 8, hcy - 10 + Math.max(0, er) * 2, 4, 3, "p");
+  L.ell(hcx - 8, hcy - 9 + Math.max(0, el) * 3, 3.4, 5, "d");
+  L.ell(hcx + 8, hcy - 9 + Math.max(0, er) * 3, 3.4, 5, "d");
+  L.ell(hcx - 8, hcy - 8 + Math.max(0, el) * 3, 1.6, 3, "p");
+  L.ell(hcx + 8, hcy - 8 + Math.max(0, er) * 3, 1.6, 3, "p");
   L.ell(hcx, hcy, 11, flat ? 7 : 8.5, "b");
   L.ell(hcx - 9, hcy + 3, 3, 2.6, "b");
   L.ell(hcx + 9, hcy + 3, 3, 2.6, "b");
-  L.ell(hcx, hcy + 4, 4.3, 2.9, "l");
+  L.ell(hcx, hcy + 5, 4.6, 3.2, "d"); // dark mask
+  L.ell(hcx, hcy + 5, 3.6, 2.3, "l");
   for (const sx of [-4, -1, 0, 3]) L.rect(hcx + sx, hcy - 8, 1, 2, "d");
   // blush
   for (let i = 0; i < d.blush; i++) {
@@ -264,7 +257,7 @@ function drawHead(L, hcx, hcy, d, flat) {
   eyeAt(hcx + 3, 1);
   // nose + mouth
   const nx = Math.round(hcx) - 1, ny = Math.round(hcy + 3);
-  L.rect(nx, ny, 2, 1, "p");
+  L.rect(nx, ny, 2, 1, "e");
   switch (d.mouth) {
     case "smile": L.set(nx - 1, ny + 1, "e"); L.set(nx, ny + 2, "e"); L.set(nx + 1, ny + 2, "e"); L.set(nx + 2, ny + 1, "e"); break;
     case "open": L.rect(nx - 1, ny + 1, 4, 3, "e"); L.rect(nx, ny + 3, 2, 1, "p"); break;
@@ -336,6 +329,7 @@ function sparkle(t) {
 }
 function fr(c, front = [], back = []) {
   const f = new Layer();
+  f.head = c.head;
   for (const b of back) f.over(b);
   f.over(c);
   for (const x of front) f.over(x);
@@ -417,17 +411,19 @@ const sheetW = COLS * S,
 const sheet = Buffer.alloc(sheetW * sheetH * 4);
 let idx = 0;
 const json = {
-  name: "Pixel Cat",
+  name: "Pixel Frenchie",
   frameWidth: S,
   frameHeight: S,
   anchor: { x: 0.5, y: 1 },
   animations: {},
   states: {},
+  anchors: [],
 };
 for (const a of anims) {
   json.animations[a.name] = { start: idx, count: a.frames.length, fps: a.fps, loop: a.loop };
   json.states[a.name] = a.name;
   for (const f of a.frames) {
+    json.anchors.push(f.head ? { x: f.head.x, y: f.head.y } : { x: 16, y: 12 });
     const cx = (idx % COLS) * S,
       cy = Math.floor(idx / COLS) * S;
     for (let y = 0; y < S; y++)
@@ -512,8 +508,8 @@ function faceLayer() {
 {
   // tray template: black silhouette on 22x22 grid, drawn at 2x => 44x44
   const T = new Layer(22, 22);
-  T.ear(5, 3, 5, 5, "O");
-  T.ear(16, 3, 5, 5, "O");
+  T.ell(5, 5, 2.6, 4, "O");
+  T.ell(17, 5, 2.6, 4, "O");
   T.ell(11, 12, 9, 7.5, "O");
   // eye holes + nose hole
   for (const [x, y] of [

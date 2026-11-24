@@ -2,6 +2,7 @@ mod agents;
 mod characters;
 mod input;
 mod integrations;
+mod media;
 mod settings;
 
 use serde_json::{json, Value};
@@ -47,6 +48,21 @@ fn fit_pet(app: &AppHandle, pet: &WebviewWindow, s: &Value) {
     }
 }
 
+/// Re-fit the pet window to its monitor (called on display changes) and keep it above fullscreen apps.
+pub fn refit(app: &AppHandle) {
+    let s = app.state::<SettingsStore>().get();
+    if let Some(pet) = app.get_webview_window("pet") {
+        fit_pet(app, &pet, &s);
+        raise(app, &pet, bool_of(&s, "alwaysOnTop", true));
+    }
+}
+
+fn raise(app: &AppHandle, pet: &WebviewWindow, top: bool) {
+    if let Ok(ptr) = pet.ns_window() {
+        input::harden_window(app, ptr as usize, top);
+    }
+}
+
 fn create_pet(app: &AppHandle, s: &Value) -> tauri::Result<()> {
     let pet = WebviewWindowBuilder::new(app, "pet", WebviewUrl::App("index.html?view=pet".into()))
         .title("WanWan-chan")
@@ -63,6 +79,7 @@ fn create_pet(app: &AppHandle, s: &Value) -> tauri::Result<()> {
         .build()?;
     let _ = pet.set_ignore_cursor_events(true);
     fit_pet(app, &pet, s);
+    raise(app, &pet, bool_of(s, "alwaysOnTop", true));
     if bool_of(s, "enabled", true) {
         let _ = pet.show();
     }
@@ -122,6 +139,7 @@ fn apply(app: &AppHandle, s: &Value) {
     let enabled = bool_of(s, "enabled", true);
     if let Some(pet) = app.get_webview_window("pet") {
         let _ = pet.set_always_on_top(bool_of(s, "alwaysOnTop", true));
+        raise(app, &pet, bool_of(s, "alwaysOnTop", true));
         if enabled {
             fit_pet(app, &pet, s);
             let _ = pet.show();
@@ -132,6 +150,7 @@ fn apply(app: &AppHandle, s: &Value) {
     // Global monitors only exist while the pet is visible.
     let want_keys = enabled && bool_of(s, "keyboardInteraction", true);
     input::configure(app, enabled, want_keys);
+    media::configure(app, enabled && bool_of(s, "musicDance", true));
 
     // Launch at login
     let al = app.autolaunch();
@@ -201,6 +220,14 @@ fn save_position(store: State<SettingsStore>, x: f64, y: f64) {
     }
 }
 
+/// Bond progress is owned by the pet window; persist it without echoing back.
+#[tauri::command]
+fn save_bond(store: State<SettingsStore>, bond: Value) {
+    if bond.is_object() {
+        store.patch(&json!({ "bond": bond }));
+    }
+}
+
 #[tauri::command]
 fn set_ignore_cursor(app: AppHandle, ignore: bool) {
     if let Some(w) = app.get_webview_window("pet") {
@@ -232,7 +259,7 @@ fn pet_action(app: AppHandle, name: String) {
 
 #[tauri::command]
 fn agent_event(app: AppHandle, agent: String, event: String) -> Result<String, String> {
-    agents::dispatch(&app, &agent, &event).map(String::from)
+    agents::dispatch(&app, &agent, &event, &Value::Null, None).map(String::from)
 }
 
 #[tauri::command]
@@ -257,6 +284,100 @@ fn integration_set(app: AppHandle, agent: String, install: bool) -> Result<Strin
         update_settings(&app, &json!({"agent": {"enabled": true}}));
     }
     Ok(msg)
+}
+
+/// Bring the app that ran an agent (terminal / editor) to the front.
+#[tauri::command]
+fn focus_app(bid: String) -> Result<(), String> {
+    if bid.is_empty() || bid.len() > 80 || !bid.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-') {
+        return Err("invalid bundle id".into());
+    }
+    std::process::Command::new("open").args(["-b", &bid]).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Download a published calendar feed. Uses the system `curl` (no extra TLS stack), https only,
+/// on a worker thread so the UI never blocks.
+#[tauri::command]
+async fn fetch_url_text(url: String) -> Result<String, String> {
+    let url = url.trim().replacen("webcal://", "https://", 1);
+    if !url.starts_with("https://") || url.len() > 2000 || url.chars().any(char::is_whitespace) {
+        return Err("Use a full https:// (or webcal://) link".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let out = std::process::Command::new("curl")
+            .args(["-sSL", "--max-time", "20", "--max-filesize", "6000000", "--proto", "=https", "--proto-redir", "=https", "-A", "WanWan-chan", &url])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            let err = String::from_utf8_lossy(&out.stderr);
+            return Err(err.lines().next().unwrap_or("download failed").to_string());
+        }
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        if !text.trim_start().starts_with("BEGIN:VCALENDAR") {
+            return Err("That link did not return a calendar (.ics) feed".into());
+        }
+        Ok(text)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !url.starts_with("https://") || url.len() > 2000 || url.chars().any(char::is_whitespace) {
+        return Err("only https links can be opened".into());
+    }
+    std::process::Command::new("open").arg(&url).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Names of installed apps (for "open <app>" requests). Scans the usual application folders.
+#[tauri::command]
+fn list_apps(app: AppHandle) -> Vec<String> {
+    let mut dirs: Vec<std::path::PathBuf> = ["/Applications", "/Applications/Utilities", "/System/Applications", "/System/Applications/Utilities"]
+        .iter().map(std::path::PathBuf::from).collect();
+    if let Ok(h) = app.path().home_dir() {
+        dirs.push(h.join("Applications"));
+    }
+    let mut names = std::collections::BTreeSet::new();
+    for d in dirs {
+        if let Ok(rd) = fs::read_dir(d) {
+            for e in rd.flatten() {
+                let n = e.file_name().to_string_lossy().to_string();
+                if let Some(stem) = n.strip_suffix(".app") {
+                    if !stem.starts_with('.') {
+                        names.insert(stem.to_string());
+                    }
+                }
+            }
+        }
+    }
+    names.into_iter().collect()
+}
+
+/// Launch an installed app by name (only called for things the user explicitly asked for).
+#[tauri::command]
+async fn open_app(name: String) -> Result<(), String> {
+    let ok = !name.is_empty()
+        && name.len() <= 80
+        && !name.starts_with('-')
+        && name.chars().all(|c| c.is_alphanumeric() || " ._-&+()'".contains(c));
+    if !ok {
+        return Err("invalid app name".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let out = std::process::Command::new("open").args(["-a", &name]).output().map_err(|e| e.to_string())?;
+        if out.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&out.stderr).trim().to_string()) }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Give the pet window keyboard focus (needed to type in the panel).
+#[tauri::command]
+fn focus_pet(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("pet") {
+        let _ = w.set_focus();
+    }
 }
 
 #[tauri::command]
@@ -310,6 +431,14 @@ fn import_character(app: AppHandle, path: String, name: String) -> Result<Value,
     characters::import(&app, &path, &name)
 }
 #[tauri::command]
+fn export_character_pack(app: AppHandle, id: String, path: String) -> Result<(), String> {
+    characters::export_pack(&app, &id, &path)
+}
+#[tauri::command]
+fn import_character_pack(app: AppHandle, path: String) -> Result<Value, String> {
+    characters::import_pack(&app, &path)
+}
+#[tauri::command]
 fn save_character_image(app: AppHandle, id: String, data_url: String) -> Result<(), String> {
     characters::save_image(&app, &id, &data_url)
 }
@@ -320,6 +449,12 @@ fn load_character_original(app: AppHandle, id: String) -> Result<String, String>
 #[tauri::command]
 fn save_character_config(app: AppHandle, id: String, config: Value) -> Result<(), String> {
     characters::save_config(&app, &id, &config)?;
+    let _ = app.emit("character-changed", id);
+    Ok(())
+}
+#[tauri::command]
+fn set_character_sound(app: AppHandle, id: String, path: Option<String>) -> Result<(), String> {
+    characters::set_sound(&app, &id, path.as_deref())?;
     let _ = app.emit("character-changed", id);
     Ok(())
 }
@@ -337,6 +472,14 @@ fn read_text_file(path: String) -> Result<String, String> {
     characters::read_text(&path)
 }
 #[tauri::command]
+fn read_image_file(path: String) -> Result<String, String> {
+    characters::read_image(&path)
+}
+#[tauri::command]
+fn create_character(app: AppHandle, name: String, data_url: String, config: Value) -> Result<String, String> {
+    characters::create(&app, &name, &data_url, &config)
+}
+#[tauri::command]
 fn open_characters_dir(app: AppHandle) -> Result<(), String> {
     let d = characters::dir(&app)?;
     std::process::Command::new("open").arg(d).spawn().map_err(|e| e.to_string())?;
@@ -350,12 +493,15 @@ fn build_tray(app: &AppHandle, s: &Value) -> tauri::Result<()> {
     let on_top = CheckMenuItem::with_id(app, "ontop", "Always on Top", true, bool_of(s, "alwaysOnTop", true), None::<&str>)?;
     let jump = MenuItem::with_id(app, "jump", "Say Hi (Jump)", true, None::<&str>)?;
     let sit = MenuItem::with_id(app, "sit", "Sit / Stand Up", true, None::<&str>)?;
+    let peek = MenuItem::with_id(app, "peek", "Peek Mode On / Off", true, None::<&str>)?;
+    let focus = MenuItem::with_id(app, "focus", "Start / Stop Focus", true, None::<&str>)?;
+    let panel = MenuItem::with_id(app, "panel", "Agents & Quick Open…", true, None::<&str>)?;
     let reset = MenuItem::with_id(app, "reset", "Reset Position", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("Cmd+,"))?;
     let quit = MenuItem::with_id(app, "quit", "Quit WanWan-chan", true, Some("Cmd+Q"))?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&show, &on_top, &jump, &sit, &reset, &sep1, &settings, &sep2, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &on_top, &jump, &sit, &peek, &focus, &panel, &reset, &sep1, &settings, &sep2, &quit])?;
 
     TrayIconBuilder::with_id("tray")
         .icon(tauri::include_image!("icons/tray.png"))
@@ -376,6 +522,16 @@ fn build_tray(app: &AppHandle, s: &Value) -> tauri::Result<()> {
             }
             "sit" => {
                 let _ = app.emit("pet-action", "toggle-sit");
+            }
+            "peek" => {
+                let cur = bool_of(&app.state::<SettingsStore>().get(), "peekMode", false);
+                update_settings(app, &json!({"peekMode": !cur}));
+            }
+            "focus" => {
+                let _ = app.emit("pet-action", "focus:toggle");
+            }
+            "panel" => {
+                let _ = app.emit("pet-action", "panel");
             }
             "reset" => {
                 update_settings(app, &json!({"position": settings::defaults()["position"].clone(), "enabled": true}));
@@ -401,12 +557,19 @@ pub fn run() {
             get_settings,
             set_settings,
             save_position,
+            save_bond,
             set_ignore_cursor,
             list_monitors,
             pet_action,
             agent_event,
             agent_helper_path,
             integration_status,
+            focus_app,
+            list_apps,
+            open_app,
+            focus_pet,
+            fetch_url_text,
+            open_url,
             integration_set,
             keyboard_permission,
             request_keyboard_permission,
@@ -417,11 +580,16 @@ pub fn run() {
             list_characters,
             load_character,
             import_character,
+            export_character_pack,
+            import_character_pack,
             save_character_config,
             save_character_image,
             load_character_original,
             delete_character,
+            set_character_sound,
             read_text_file,
+            read_image_file,
+            create_character,
             open_characters_dir,
         ])
         .setup(|app| {
@@ -434,6 +602,7 @@ pub fn run() {
             app.manage(store);
             build_tray(&handle, &s)?;
             create_pet(&handle, &s)?;
+            input::watch_displays(&handle);
             apply(&handle, &s);
             #[cfg(debug_assertions)]
             if std::env::var("WANWANCHAN_OPEN_SETTINGS").is_ok() {

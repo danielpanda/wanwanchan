@@ -4,53 +4,67 @@ export type Lang = "id" | "en";
 
 const LINES = {
   id: {
-    water: ["Minum dulu yuk 💧", "Udah minum belum? Aku haus nih~ 🥤", "Glek glek... giliran kamu minum! 💦"],
-    eyes: ["Istirahatin mata 20 detik, lihat yang jauh ya 👀", "20-20-20! Tatap sesuatu yang jauh 20 detik 🌳", "Matanya capek lho, kedip-kedip dulu 😌"],
-    posture: ["Tegakkan badan! Punggungmu bilang makasih 🧘", "Bahu turun, punggung lurus ✨", "Cek postur dulu yuk, jangan bungkuk 🐱"],
-    stretch: ["Berdiri, regangin badan sebentar yuk 🙆", "Jalan-jalan 2 menit, nanti lanjut lagi 🚶", "Nyem~ regangin tangan dan leher dulu 🐾"],
-    lunch: ["Waktunya makan siang! 🍙", "Perut bunyi... makan dulu yuk 🍜"],
-    sleep: ["Udah malam... tidur yuk 😴", "Besok lanjut lagi, istirahat dulu ya 🌙"],
-    custom: ["Pengingat dari kucing 🐾"],
-    morning: ["Selamat pagi! Semangat hari ini ☀️", "Pagi~ udah sarapan belum? 🍞"],
-    noon: ["Halo siang! Jangan lupa makan 🍙", "Siang-siang gini enaknya minum yang dingin 🧃"],
-    evening: ["Selamat sore! Hampir selesai nih 🌇", "Sore~ tinggal sedikit lagi, semangat! 💪"],
-    night: ["Selamat malam! Jangan begadang ya 🌙", "Malam~ aku temenin deh 🐾"],
-    welcome: ["Kamu balik! Kangen tau 🥰", "Akhirnya datang juga~ 💕", "Hai hai! Aku nungguin lho 🐱"],
-    chatter: ["Lagi ngapain? 👀", "Aku lapar... (tapi bohong) 🐟", "Meong~ 🐾", "Kamu keren hari ini ✨", "Boleh minta elus? 🥺", "Aku jagain desktop kamu 🛡️", "Hmm... enaknya tidur siang ya 😴", "Jangan lupa senyum 😊", "Ada yang bisa aku bantu? (cuma lucu aja sih) 🐱"],
-    agentDone: ["Selesai! ✨", "Tugasnya beres! 🎉", "Yeay, sudah kelar! 🥳"],
-    agentError: ["Waduh, ada error nih 😿", "Aduh... ada yang gagal 💦"],
-    agentWait: ["Aku butuh kamu nih 👀", "Menunggu jawabanmu~ ⏳"],
-    praise: ["Rajin banget! Udah lama ngetik, istirahat dulu yuk 🍵", "Jarimu hebat! Tapi minum dulu ya 💧"],
-    ouch: ["Geli ih! 🤭", "Hehe jangan dipencet terus~ 💕", "Mrrrow! 😹"],
-    purr: ["purr~ 💕", "prrr... enak 😌", "Nyaman banget~ 🥰"],
-    snooze: ["Oke, nanti aku ingetin lagi 🐾", "Siap, 10 menit lagi ya ⏰"],
-    sit: ["Duduk manis~ 🐾", "Oke, aku duduk di sini ya 🪑"],
-    stand: ["Yuk jalan lagi! 🐾", "Bebas deh~ 🏃"],
+    water: ["Minum dulu yuk", "Udah minum belum? Aku haus nih~", "Glek glek... giliran kamu minum!"],
+    eyes: ["Istirahatin mata 20 detik, lihat yang jauh ya", "20-20-20! Tatap sesuatu yang jauh 20 detik", "Matanya capek lho, kedip-kedip dulu"],
+    posture: ["Tegakkan badan! Punggungmu bilang makasih", "Bahu turun, punggung lurus", "Cek postur dulu yuk, jangan bungkuk"],
+    stretch: ["Berdiri, regangin badan sebentar yuk", "Jalan-jalan 2 menit, nanti lanjut lagi", "Nyem~ regangin tangan dan leher dulu"],
+    lunch: ["Waktunya makan siang!", "Perut bunyi... makan dulu yuk"],
+    sleep: ["Udah malam... tidur yuk", "Besok lanjut lagi, istirahat dulu ya"],
+    custom: ["Pengingat dari anjing"],
+    morning: ["Selamat pagi! Semangat hari ini", "Pagi~ udah sarapan belum?"],
+    noon: ["Halo siang! Jangan lupa makan", "Siang-siang gini enaknya minum yang dingin"],
+    evening: ["Selamat sore! Hampir selesai nih", "Sore~ tinggal sedikit lagi, semangat!"],
+    night: ["Selamat malam! Jangan begadang ya", "Malam~ aku temenin deh"],
+    welcome: ["Kamu balik! Kangen tau", "Akhirnya datang juga~", "Hai hai! Aku nungguin lho"],
+    chatter: ["Lagi ngapain?", "Aku lapar... (tapi bohong)", "Guk guk!", "Kamu keren hari ini", "Boleh minta elus?", "Aku jagain desktop kamu", "Hmm... enaknya tidur siang ya", "Jangan lupa senyum", "Ada yang bisa aku bantu? (cuma lucu aja sih)"],
+    agentDone: ["Selesai!", "Tugasnya beres!", "Yeay, sudah kelar!"],
+    agentError: ["Waduh, ada error nih", "Aduh... ada yang gagal"],
+    agentWait: ["Aku butuh kamu nih", "Menunggu jawabanmu~"],
+    praise: ["Rajin banget! Udah lama ngetik, istirahat dulu yuk", "Jarimu hebat! Tapi minum dulu ya"],
+    ouch: ["Geli ih!", "Hehe jangan dipencet terus~", "Guk!"],
+    purr: ["Hehe, enak~", "Aduh, nyaman banget...", "Nyaman banget~"],
+    snooze: ["Oke, nanti aku ingetin lagi", "Siap, 10 menit lagi ya"],
+    sit: ["Duduk manis~", "Oke, aku duduk di sini ya"],
+    stand: ["Yuk jalan lagi!", "Bebas deh~"],
+    focusStart: ["Fokus dimulai! Aku temenin", "Gas fokus! Aku jagain"],
+    breakStart: ["Waktunya istirahat! Regangin badan dulu", "Sesi selesai, hebat! Istirahat ya"],
+    longBreak: ["Istirahat panjang! Kamu keren banget", "Empat sesi beres! Ngopi dulu yuk"],
+    focusBack: ["Yuk lanjut fokus!", "Istirahat selesai, gas lagi"],
+    focusStop: ["Sesi fokus dihentikan"],
+    music: ["Tarik mang... uhuyy musiknya!", "Goyang dulu dong~ uhuyy", "Joget terus, jangan kasih kendor!", "Volume naikin dikit, aku mau konser", "Ini lagu siapa sih, kok bikin kaki gatel", "Cek sound... satu dua tiga... uhuyy!", "DJ WanWan on duty! Request lagu?", "Guk-guk-guk~ nada dasar", "Ekorku gak bisa diem nih", "Aku bukan joget, aku lagi olahraga ekor", "Bang, sawerannya mana? (cuma bercanda)", "Jangan pindah lagu dulu, lagi asik!"],
+    levelUp: ["Naik level! Kedekatan kita bertambah", "Level baru! Aku makin sayang kamu"],
     ok: "OK", later: "Nanti 10m",
   },
   en: {
-    water: ["Time for a sip of water 💧", "Have you had water yet? I'm thirsty~ 🥤", "Glug glug... your turn! 💦"],
-    eyes: ["Rest your eyes: look far away for 20 seconds 👀", "20-20-20! Stare at something distant 🌳", "Blink a little, your eyes are tired 😌"],
-    posture: ["Sit up straight! Your back says thanks 🧘", "Shoulders down, back straight ✨", "Posture check, no slouching 🐱"],
-    stretch: ["Stand up and stretch for a moment 🙆", "Take a two-minute walk 🚶", "Stretch your arms and neck 🐾"],
-    lunch: ["Lunch time! 🍙", "Tummy rumbling... let's eat 🍜"],
-    sleep: ["It's late... time for bed 😴", "Pick it up tomorrow, rest now 🌙"],
-    custom: ["A reminder from your cat 🐾"],
-    morning: ["Good morning! Have a great day ☀️", "Morning~ had breakfast yet? 🍞"],
-    noon: ["Good afternoon! Don't forget lunch 🍙", "Something cold would be nice 🧃"],
-    evening: ["Good evening! Almost done 🌇", "Just a little more, you can do it 💪"],
-    night: ["Good night! Don't stay up too late 🌙", "I'll keep you company 🐾"],
-    welcome: ["You're back! I missed you 🥰", "Finally~ I was waiting 💕", "Hi hi! 🐱"],
-    chatter: ["What are you up to? 👀", "I'm hungry... (not really) 🐟", "Meow~ 🐾", "You're doing great today ✨", "Can I get a pat? 🥺", "I'm guarding your desktop 🛡️", "A nap sounds nice 😴", "Don't forget to smile 😊", "Need anything? (I'm only cute) 🐱"],
-    agentDone: ["All done! ✨", "Task finished! 🎉", "Yay, it's ready! 🥳"],
-    agentError: ["Uh-oh, an error 😿", "Something failed... 💦"],
-    agentWait: ["I need you 👀", "Waiting for your answer~ ⏳"],
-    praise: ["So diligent! Take a break soon 🍵", "Great typing! Drink some water too 💧"],
-    ouch: ["That tickles! 🤭", "Hehe stop poking~ 💕", "Mrrrow! 😹"],
-    purr: ["purr~ 💕", "prrr... nice 😌", "So cozy~ 🥰"],
-    snooze: ["Okay, I'll remind you later 🐾", "Got it, 10 more minutes ⏰"],
-    sit: ["Sitting pretty~ 🐾", "Okay, I'll stay right here 🪑"],
-    stand: ["Let's roam again! 🐾", "Free at last~ 🏃"],
+    water: ["Time for a sip of water", "Have you had water yet? I'm thirsty~", "Glug glug... your turn!"],
+    eyes: ["Rest your eyes: look far away for 20 seconds", "20-20-20! Stare at something distant", "Blink a little, your eyes are tired"],
+    posture: ["Sit up straight! Your back says thanks", "Shoulders down, back straight", "Posture check, no slouching"],
+    stretch: ["Stand up and stretch for a moment", "Take a two-minute walk", "Stretch your arms and neck"],
+    lunch: ["Lunch time!", "Tummy rumbling... let's eat"],
+    sleep: ["It's late... time for bed", "Pick it up tomorrow, rest now"],
+    custom: ["A reminder from your dog"],
+    morning: ["Good morning! Have a great day", "Morning~ had breakfast yet?"],
+    noon: ["Good afternoon! Don't forget lunch", "Something cold would be nice"],
+    evening: ["Good evening! Almost done", "Just a little more, you can do it"],
+    night: ["Good night! Don't stay up too late", "I'll keep you company"],
+    welcome: ["You're back! I missed you", "Finally~ I was waiting", "Hi hi!"],
+    chatter: ["What are you up to?", "I'm hungry... (not really)", "Woof!", "You're doing great today", "Can I get a pat?", "I'm guarding your desktop", "A nap sounds nice", "Don't forget to smile", "Need anything? (I'm only cute)"],
+    agentDone: ["All done!", "Task finished!", "Yay, it's ready!"],
+    agentError: ["Uh-oh, an error", "Something failed..."],
+    agentWait: ["I need you", "Waiting for your answer~"],
+    praise: ["So diligent! Take a break soon", "Great typing! Drink some water too"],
+    ouch: ["That tickles!", "Hehe stop poking~", "Guk!"],
+    purr: ["Hehe, nice~", "Ahh, so good...", "So cozy~"],
+    snooze: ["Okay, I'll remind you later", "Got it, 10 more minutes"],
+    sit: ["Sitting pretty~", "Okay, I'll stay right here"],
+    stand: ["Let's roam again!", "Free at last~"],
+    focusStart: ["Focus time! I'm with you", "Let's focus! I've got your back"],
+    breakStart: ["Break time! Stretch a little", "Session done, nice! Rest up"],
+    longBreak: ["Long break! You're amazing", "Four sessions done! Grab a coffee"],
+    focusBack: ["Back to focus!", "Break's over, let's go"],
+    focusStop: ["Focus session stopped"],
+    music: ["Uhuyy, the music!", "Shake it~ uhuyy", "Don't stop the groove now!", "Turn it up, I want a concert", "Whose song is this? My paws can't stay still", "Mic check... one two... uhuyy!", "DJ WanWan on duty! Any requests?", "Woof-woof-woof~ that's my key", "My tail does cardio now", "Tips please? (just kidding)", "Don't skip yet, I'm vibing!"],
+    levelUp: ["Level up! We're getting closer", "New level! I like you even more"],
     ok: "OK", later: "Later 10m",
   },
 } as const;
@@ -60,6 +74,16 @@ export type LineKey = Exclude<keyof (typeof LINES)["id"], "ok" | "later">;
 export function pick(lang: Lang, key: LineKey, rnd: () => number = Math.random): string {
   const arr = LINES[lang][key] as readonly string[];
   return arr[Math.floor(rnd() * arr.length) % arr.length];
+}
+
+/** "Minum dulu yuk" -> "Dani, minum dulu yuk" when the user told us their name. */
+export function withName(text: string, name: string): string {
+  const n = name.trim();
+  if (!n) return text;
+  const lead = /^\p{Extended_Pictographic}️?\s*/u.exec(text)?.[0] ?? "";
+  const rest = text.slice(lead.length);
+  const keepCase = /^I\b/.test(rest); // English "I'm", "I'll"
+  return `${lead}${n}, ${keepCase ? rest.charAt(0) : rest.charAt(0).toLowerCase()}${rest.slice(1)}`;
 }
 
 export const buttonLabels = (lang: Lang) => ({ ok: LINES[lang].ok, later: LINES[lang].later });
@@ -74,6 +98,14 @@ export const REMINDER_NAMES: Record<Lang, Record<string, string>> = {
   id: { water: "Minum air", eyes: "Istirahat mata (20-20-20)", posture: "Cek postur", stretch: "Peregangan", lunch: "Makan siang", sleep: "Waktu tidur" },
   en: { water: "Drink water", eyes: "Eye rest (20-20-20)", posture: "Posture check", stretch: "Stretch", lunch: "Lunch", sleep: "Bedtime" },
 };
+
+export function calendarText(title: string, start: number, minsLeft: number, lang: Lang, showTitle: boolean): string {
+  const t = new Date(start);
+  const hhmm = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+  const name = showTitle ? title : lang === "id" ? "Pertemuan" : "Meeting";
+  const when = minsLeft > 0 ? (lang === "id" ? `${minsLeft} menit lagi` : `in ${minsLeft} min`) : lang === "id" ? "sekarang!" : "now!";
+  return `${name} · ${hhmm} (${when})`;
+}
 
 export function timeGreeting(date: Date, lang: Lang, rnd: () => number = Math.random): string {
   const h = date.getHours();

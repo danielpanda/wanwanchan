@@ -8,14 +8,16 @@ export class Bubble {
   private typer: number | undefined;
   private hideTimer: number | undefined;
   private onClose: (() => void) | null = null;
+  private onBody: (() => void) | null = null;
   private audio: AudioContext | null = null;
+  private voice: HTMLAudioElement | null = null;
   visible = false;
 
   constructor() {
     const style = document.createElement("style");
     style.textContent = `
       #pm-bubble{position:fixed;left:0;top:0;display:none;max-width:230px;min-width:70px;padding:9px 11px 8px;background:#fffdf7;color:#3b2a2f;
-        font:600 12.5px/1.35 ui-rounded,"SF Pro Rounded",-apple-system,sans-serif;border-radius:10px;border:2px solid #5c363a;
+        font:600 12.5px/1.35 ui-rounded,"SF Pro Rounded",-apple-system,sans-serif;white-space:pre-line;overflow-wrap:anywhere;border-radius:10px;border:2px solid #5c363a;
         box-shadow:0 3px 0 #5c363a,0 6px 14px rgba(0,0,0,.28);user-select:none;-webkit-user-select:none;cursor:default;will-change:transform;z-index:10}
       #pm-bubble::after{content:"";position:absolute;left:var(--tail,50%);width:9px;height:9px;background:#fffdf7;border:2px solid #5c363a;
         border-top:none;border-left:none;transform:translateX(-50%) rotate(45deg)}
@@ -35,13 +37,20 @@ export class Bubble {
     this.btns.className = "btns";
     this.el.append(this.textEl, this.btns);
     this.el.addEventListener("pointerdown", (e) => e.stopPropagation());
-    this.el.addEventListener("click", (e) => { if (!(e.target as HTMLElement).closest("button")) this.hide(); });
+    this.el.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).closest("button")) return;
+      const go = this.onBody;
+      this.hide();
+      go?.();
+    });
     document.body.appendChild(this.el);
   }
 
-  show(text: string, opts: { buttons?: BubbleButton[]; seconds: number; sound?: boolean; onClose?: () => void }) {
+  show(text: string, opts: { buttons?: BubbleButton[]; seconds: number; sound?: boolean; onClose?: () => void; onClick?: () => void }) {
     this.hide();
     this.onClose = opts.onClose ?? null;
+    this.onBody = opts.onClick ?? null;
+    this.el.style.cursor = opts.onClick ? "pointer" : "default";
     this.btns.replaceChildren();
     for (const b of opts.buttons ?? []) {
       const el = document.createElement("button");
@@ -103,18 +112,41 @@ export class Bubble {
     return x >= r.left - 2 && x <= r.right + 2 && y >= r.top - 2 && y <= r.bottom + 10;
   }
 
+  /** Custom bubble sound of the current character (data URL); null = synthesized bark. */
+  setVoice(url: string | null) { this.voice = url ? new Audio(url) : null; }
+
+  /** Custom voice if the character has one, else a synthesized "woof-woof": short sawtooth barks with a falling pitch and a noise burst, low-passed. */
   private blip() {
+    if (this.voice) { this.voice.currentTime = 0; void this.voice.play().catch(() => {}); return; }
     try {
       this.audio ??= new AudioContext();
-      const a = this.audio, t = a.currentTime;
-      for (const [i, f] of [[0, 784], [1, 1047]] as const) {
-        const o = a.createOscillator(), g = a.createGain();
-        o.type = "square"; o.frequency.value = f;
-        g.gain.setValueAtTime(0.0001, t + i * 0.09);
-        g.gain.exponentialRampToValueAtTime(0.06, t + i * 0.09 + 0.01);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.09 + 0.08);
-        o.connect(g).connect(a.destination);
-        o.start(t + i * 0.09); o.stop(t + i * 0.09 + 0.09);
+      const a = this.audio;
+      if (a.state === "suspended") void a.resume();
+      const v = 0.9 + Math.random() * 0.2;
+      const noise = a.createBuffer(1, Math.floor(a.sampleRate * 0.12), a.sampleRate);
+      const ch = noise.getChannelData(0);
+      for (let k = 0; k < ch.length; k++) ch[k] = Math.random() * 2 - 1;
+      for (const t of [a.currentTime, a.currentTime + 0.2]) {
+        const dur = 0.13;
+        const lp = a.createBiquadFilter();
+        lp.type = "lowpass"; lp.Q.value = 4;
+        lp.frequency.setValueAtTime(1800, t);
+        lp.frequency.exponentialRampToValueAtTime(600, t + dur);
+        const out = a.createGain();
+        out.gain.setValueAtTime(0.0001, t);
+        out.gain.exponentialRampToValueAtTime(0.22, t + 0.012);
+        out.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        lp.connect(out).connect(a.destination);
+        const o = a.createOscillator();
+        o.type = "sawtooth";
+        o.frequency.setValueAtTime(560 * v, t);
+        o.frequency.exponentialRampToValueAtTime(210 * v, t + dur);
+        o.connect(lp);
+        o.start(t); o.stop(t + dur + 0.02);
+        const n = a.createBufferSource(), ng = a.createGain();
+        n.buffer = noise; ng.gain.value = 0.35;
+        n.connect(ng).connect(lp);
+        n.start(t); n.stop(t + 0.05);
       }
     } catch { /* audio is optional */ }
   }

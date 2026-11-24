@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # Fallback DMG builder for machines where `hdiutil create -srcfolder` (used by Tauri's bundler) fails.
-# usage: scripts/make-dmg.sh  -> src-tauri/target/release/bundle/dmg/WanWan-chan_<version>_aarch64.dmg
+# usage: scripts/make-dmg.sh  -> src-tauri/target/release/bundle/dmg/WanWan-chan_<version>_<universal|aarch64>.dmg
 set -euo pipefail
 cd "$(dirname "$0")/.."
 B=src-tauri/target/release/bundle
 APP="$B/macos/WanWan-chan.app"
+ARCH=aarch64
+# prefer the universal (Apple Silicon + Intel) build when it exists
+if [ -d "src-tauri/target/universal-apple-darwin/release/bundle/macos/WanWan-chan.app" ]; then
+  APP="src-tauri/target/universal-apple-darwin/release/bundle/macos/WanWan-chan.app"; ARCH=universal
+fi
 VER=$(grep -m1 '"version"' src-tauri/tauri.conf.json | sed -E 's/.*: *"([^"]+)".*/\1/')
-OUT="$B/dmg/WanWan-chan_${VER}_aarch64.dmg"
+OUT="$B/dmg/WanWan-chan_${VER}_${ARCH}.dmg"
 TMP=$(mktemp -d)
 mkdir -p "$B/dmg"; rm -f "$OUT"
 hdiutil create -size 40m -fs HFS+ -volname WanWan-chan "$TMP/rw.dmg" >/dev/null

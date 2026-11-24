@@ -19,6 +19,12 @@ export function Behavior({ settings: s, update }: TabProps) {
       <Group title="Mouse">
         <Row label="Mouse interaction" desc="Look toward the cursor and jump when clicked."><Toggle value={s.mouseInteraction} onChange={(v) => update({ mouseInteraction: v })} /></Row>
         <Row label="Follow cursor" desc="The character chases your pointer."><Toggle value={s.followCursor} disabled={!s.mouseInteraction} onChange={(v) => update({ followCursor: v })} /></Row>
+        <Row label="Scroll reaction" desc="Plays the Scroll animation while you scroll a page (uses Typing if the character has none). Part of mouse interaction." />
+      </Group>
+      <Group title="Peek mode">
+        <Row label="Peek from the edge" desc="For videos and focus: hides at the right screen edge, stays quiet, and only comes out for reminders. Also in the menu bar.">
+          <Toggle value={s.peekMode} onChange={(v) => update({ peekMode: v })} />
+        </Row>
       </Group>
       <Group title="Keyboard">
         <Row label="Keyboard interaction" desc="Type-along animation, excited when typing fast. Only the fact that a key was pressed is detected, never which key.">
@@ -35,12 +41,17 @@ export function Behavior({ settings: s, update }: TabProps) {
           </Row>
         )}
       </Group>
+      <Group title="Music">
+        <Row label="Dance to music" desc="Dance with floating notes while music or YouTube is playing. Uses the macOS Now Playing info, so it follows Music, Spotify and browser media.">
+          <Toggle value={s.musicDance} onChange={(v) => update({ musicDance: v })} />
+        </Row>
+      </Group>
       <Group title="Idle">
         <Row label="Random motion" desc="Occasional walks and runs."><Toggle value={s.randomMotion} onChange={(v) => update({ randomMotion: v })} /></Row>
         <Row label="Wander every" desc="Average time between walks.">
           <Slider value={s.wanderEvery} min={5} max={90} step={5} format={(v) => `${v} s`} disabled={!s.randomMotion} onChange={(v) => update({ wanderEvery: v })} />
         </Row>
-        <Row label="Sleep mode" desc="Sit, then fall asleep when you are away."><Toggle value={s.sleepMode} onChange={(v) => update({ sleepMode: v })} /></Row>
+        <Row label="Sleep mode" desc="Sit, yawn, then fall asleep when you are away; stretches when you come back."><Toggle value={s.sleepMode} onChange={(v) => update({ sleepMode: v })} /></Row>
         <Row label="Sit after"><Slider value={s.sitAfter} min={10} max={600} step={5} format={fmtSecs} disabled={!s.sleepMode} onChange={(v) => update({ sitAfter: v, sleepAfter: Math.max(s.sleepAfter, v + 10) })} /></Row>
         <Row label="Sleep after"><Slider value={s.sleepAfter} min={30} max={1800} step={10} format={fmtSecs} disabled={!s.sleepMode} onChange={(v) => update({ sleepAfter: v, sitAfter: Math.min(s.sitAfter, v - 10) })} /></Row>
       </Group>

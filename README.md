@@ -1,6 +1,6 @@
 # WanWan-chan
 
-A lightweight pixel cat that lives on your macOS desktop. Transparent, always on top, click-through everywhere except the cat itself. Built with Tauri 2 + Rust, with a React/Tailwind settings window and a plain-TypeScript Canvas 2D renderer. Fully offline.
+A lightweight pixel french bulldog that lives on your macOS desktop. Transparent, always on top, click-through everywhere except the dog itself. Built with Tauri 2 + Rust, with a React/Tailwind settings window and a plain-TypeScript Canvas 2D renderer. Fully offline.
 
 - Menu bar app (no Dock icon), draggable, remembers its position, multi-monitor aware
 - 14 animated states driven by a priority-based state machine (idle, blink, walk, run, sit, sleep, look, typing, jump, happy, thinking, drag, drop, error)
@@ -10,7 +10,7 @@ A lightweight pixel cat that lives on your macOS desktop. Transparent, always on
 
 ## Install
 
-**From a DMG** – open `WanWan-chan_0.2.0_aarch64.dmg`, drag WanWan-chan to Applications, launch it.
+**From a DMG** – open `WanWan-chan_0.2.2_universal.dmg`, drag WanWan-chan to Applications, launch it.
 Builds from this repo are ad-hoc signed, not notarized. If Gatekeeper blocks a *downloaded* copy: right-click → Open, or
 `xattr -dr com.apple.quarantine /Applications/WanWan-chan.app`.
 
@@ -32,7 +32,7 @@ npm test               # vitest: state machine + sprite config
 (cd src-tauri && cargo test)
 npm run tauri build    # WanWan-chan.app + DMG in src-tauri/target/release/bundle/
 npm run release        # same, and prints the sha256 for the Homebrew cask
-npm run assets         # regenerate the default cat, app icon and tray icon
+npm run assets         # regenerate the default dog, app icon and tray icon
 ```
 
 Relaunching the app (Finder/Spotlight) opens Settings. The menu bar icon has Show/Hide, Always on Top, Jump, Reset Position, Settings and Quit.
@@ -50,13 +50,27 @@ Relaunching the app (Finder/Spotlight) opens Settings. The menu bar icon has Sho
 
 Settings → **Notifications**. The character talks through pixel-style speech bubbles (Bahasa Indonesia or English):
 
-- **Reminders** – drink water, eye rest (20-20-20), posture, stretch, lunch, bedtime, plus any custom ones (repeat every N minutes, or daily at a time). Reminders have *Later 10m* / *OK* buttons, wait for a pause while you are typing, and are held back during **quiet hours**.
-- **Extras** – time-of-day greeting, welcome back after a long break, random chatter, "Geli ih!" when poked / "purr~" when petted, agent updates (done / error / needs you), and a break suggestion after ~45 min of non-stop typing (only key *counts* are used).
+Bubbles are kept for things that matter; small talk is off by default.
+
+- **Reminders** – drink water and stretch (on by default; for stretch the character grows to fill the screen and stretches with you), eye rest (20-20-20), posture, lunch, bedtime (with a yawn), plus custom ones: repeat every N minutes, daily at a time, or a one-time **message reminder** that switches itself off. Reminders have *Later 10m* / *OK* buttons, wait for a pause while you are typing, and are held back during **quiet hours**.
+- **Your name** – reminders and greetings address you by name. **Pinned note** – a short note that always floats above the head.
+- **Pomodoro** (Settings → Behavior, or the menu bar) – focus / short break / long break loop with a clock above the head and a bubble at every phase change.
+- **Peek mode** (Settings → Behavior, or the menu bar) – the character hides at the right screen edge, stays quiet, and only comes out for reminders.
+- **Extras** – one greeting per launch, welcome back after a long break, optional random chatter, "Geli ih!" when poked / "Hehe, enak~" when petted, agent updates (done / error / needs you), a break suggestion after ~45 min of non-stop typing (only key *counts* are used), and a scroll animation while you scroll a page.
 - Optional 8-bit blip sound. Everything is driven by a single timer armed for the next due item, so there is no polling.
 
 ## Custom characters
 
-**Import does the cleanup for you** (Settings → Character → *Import PNG…*; both steps can be switched off):
+**Recommended: build it state by state** (Settings → Character → *New character*). Each state is one PNG with its frames in a single row (for example 4 frames side by side) on a green-screen or magenta background:
+
+1. Rows can be PNG or JPG (Gemini / ChatGPT output works). Open **Row guide & AI prompt** for the rules (one horizontal row, 256×256 px square cells, 4 frames = 1024×256, ~15% margin, flat `#00FF00` / `#FF00FF`) and a copy-paste prompt for any image AI.
+2. Pick the **Idle** row to create the character, then *Import row…* for every other state.
+3. The background is keyed out everywhere (also between frames and under legs), green spill on outlines is removed, upscaled pixel art is restored, and the frame count is detected from the gaps between sprites (or set it yourself).
+4. Rows are packed into one sheet, bottom-aligned so the feet stay on the ground.
+
+A character can't be used until the required states have their own row: Idle, Walk, Sit, Sleep, Jump, Drag, Happy, Typing. Until then the pet keeps showing the default cat. Optional states borrow a related animation (Scroll uses Typing, Peek uses Sit) or fall back to Idle. Generate every row on the same canvas size so the scale stays consistent.
+
+**Quick import** (one PNG or a full sheet) **does the cleanup for you** (Settings → Character → *Import PNG…*; both steps can be switched off):
 
 1. **Clean up** – removes a solid background by flood-filling from the border (white eyes etc. inside the subject are kept, and background trapped between the legs is cleared), detects pixel art that was enlarged by an integer factor and restores the native pixels so it stays crisp, and shrinks other large images smoothly.
 2. **Animate** – a single still image gets a full generated animation set (breathing, waddle, run, jump, squash, sleep, hearts, …) using pixel-exact squash/stretch, lean and lift. Sprite sheets are split into frames automatically and left as-is.

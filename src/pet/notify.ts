@@ -1,12 +1,17 @@
-import { AGENT_LABEL, buttonLabels, pick, reminderText, timeGreeting, type LineKey } from "../shared/messages";
+import { AGENT_LABEL, buttonLabels, calendarText, pick, reminderText, timeGreeting, withName, type LineKey } from "../shared/messages";
 import type { Settings } from "../shared/types";
+import type { CalEvent } from "./ics";
 import { inQuiet, nextDue, quietEnd, sig } from "./reminders";
 
 export interface PresentOpts {
   buttons?: { label: string; primary?: boolean; onClick: () => void }[];
   seconds: number;
   sound: boolean;
+  /** Animation to play while the bubble is open (e.g. "stretch" for the stretch reminder). */
+  anim?: string;
   onClose: () => void;
+  /** Clicking the bubble body (not a button). */
+  onClick?: () => void;
 }
 export interface Host {
   settings(): Settings;
@@ -14,9 +19,31 @@ export interface Host {
   close(): void;
   /** True while the user is typing right now (reminders wait for a pause). */
   typing(): boolean;
+  /** True while in peek mode: only important bubbles get through. */
+  peeking(): boolean;
+  /** A one-shot ("once") reminder fired; switch it off in settings. */
+  disableReminder(id: string): void;
+  /** Optional: open a meeting link. */
+  openUrl?(url: string): void;
+  /** Optional: jump to the app that ran an agent (bundle id). */
+  open?(bid: string): void;
+  /** Optional: called when the user acknowledges a reminder (for bond XP). */
+  award?(kind: "reminder"): void;
 }
 
-interface Say { text: string; kind: "reminder" | "chat" | "test" }
+/** notice = important one-off with only an OK button (pomodoro), always shown.
+ *  agent = AI agent news: never dropped, ignores quiet hours; `sticky` ones stay until the agent moves on. */
+interface Say {
+  text: string;
+  kind: "reminder" | "chat" | "test" | "notice" | "agent";
+  anim?: string;
+  agent?: string;
+  sticky?: boolean;
+  onClick?: () => void;
+  link?: string;
+}
+
+const REMINDER_ANIM: Record<string, string> = { stretch: "stretch", sleep: "yawn", water: "happy" };
 
 export function fmtDuration(secs: number): string {
   const s = Math.round(secs);
@@ -26,7 +53,9 @@ export function fmtDuration(secs: number): string {
 }
 
 const SNOOZE_MS = 10 * 60_000;
-const MIN_CHAT_GAP = 20_000;
+const MIN_CHAT_GAP = 3 * 60_000;
+/** A "waiting for you" bubble stays this long unless the agent moves on or the user clicks OK. */
+const STICKY_SECS = 30 * 60;
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
 /**
@@ -39,10 +68,13 @@ export class Notifier {
   private snoozed = new Map<string, string>();
   private queue: Say[] = [];
   private showing = false;
+  private current: Say | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private pumpTimer: ReturnType<typeof setTimeout> | undefined;
   private deferred = 0;
   private lastChat = 0;
+  private cal = new Map<string, { title: string; start: number; link?: string }>();
+  private calSeen = new Set<string>();
   private typingRun = { start: 0, last: 0, praised: 0 };
 
   constructor(private host: Host) {}
@@ -74,6 +106,7 @@ export class Notifier {
     clearTimeout(this.timer); clearTimeout(this.pumpTimer);
     this.timer = this.pumpTimer = undefined;
     this.due.clear(); this.sigs.clear(); this.snoozed.clear(); this.queue = [];
+    this.cal.clear(); this.calSeen.clear();
     if (this.showing) this.host.close();
     this.showing = false;
   }
@@ -94,6 +127,14 @@ export class Notifier {
       if (k === "chat") {
         this.due.set(k, now + rand(0.7, 1.3) * n.chatterEvery * 60_000);
         this.chat(pick(n.language, "chatter"), n.chatter);
+      } else if (k.startsWith("cal:")) {
+        const c = this.cal.get(k);
+        this.due.delete(k); this.cal.delete(k); this.calSeen.add(k);
+        if (c) {
+          const cs = this.host.settings().calendar;
+          const mins = Math.max(0, Math.round((c.start - now) / 60_000));
+          this.enqueue({ text: calendarText(c.title, c.start, mins, n.language, cs.titles), kind: "reminder", link: c.link });
+        }
       } else if (k.startsWith("snooze:")) {
         this.due.delete(k);
         this.enqueue({ text: this.snoozed.get(k) ?? "", kind: "reminder" });
@@ -102,8 +143,24 @@ export class Notifier {
         const r = n.reminders.find((x) => `r:${x.id}` === k);
         const next = r ? nextDue(r, now) : null;
         if (next === null) this.due.delete(k); else this.due.set(k, next);
-        if (r) this.enqueue({ text: reminderText(r, n.language), kind: "reminder" });
+        if (r?.kind === "once") { this.due.delete(k); this.host.disableReminder(r.id); }
+        if (r) this.enqueue({ text: withName(reminderText(r, n.language), n.userName), kind: "reminder", anim: REMINDER_ANIM[r.id] });
       }
+    }
+    this.arm();
+  }
+
+  /** Replace the scheduled calendar alerts. Already-announced events are never repeated. */
+  setCalendar(events: CalEvent[], leadMin: number, now = Date.now()) {
+    if (!this.n.enabled) return;
+    for (const k of [...this.due.keys()]) if (k.startsWith("cal:")) this.due.delete(k);
+    this.cal.clear();
+    if (this.calSeen.size > 300) this.calSeen.clear();
+    for (const e of events) {
+      const key = `cal:${e.uid}|${e.start}`;
+      if (this.calSeen.has(key) || e.start < now - 60_000) continue;
+      this.due.set(key, Math.max(now + 1000, e.start - leadMin * 60_000));
+      this.cal.set(key, { title: e.title, start: e.start, link: e.link });
     }
     this.arm();
   }
@@ -111,10 +168,11 @@ export class Notifier {
   // ------------------------------------------------------------ showing
   private enqueue(s: Say) {
     if (!this.n.enabled) return;
-    this.queue.push(s);
+    if (s.kind === "agent") this.queue.unshift(s); else this.queue.push(s);
     while (this.queue.length > 4) {
       const i = this.queue.findIndex((q) => q.kind === "chat");
-      this.queue.splice(i >= 0 ? i : 0, 1);
+      const j = i >= 0 ? i : this.queue.findIndex((q) => q.kind !== "agent");
+      this.queue.splice(j >= 0 ? j : this.queue.length - 1, 1);
     }
     this.pump();
   }
@@ -126,7 +184,7 @@ export class Notifier {
     while (this.queue.length) {
       const s = this.queue[0];
       const now = new Date();
-      if (s.kind !== "test" && inQuiet(now, n.quiet)) {
+      if (s.kind !== "test" && s.kind !== "notice" && s.kind !== "agent" && inQuiet(now, n.quiet)) {
         this.queue.shift();
         if (s.kind === "reminder") this.snooze(s.text, quietEnd(now, n.quiet) - Date.now());
         continue;
@@ -153,15 +211,21 @@ export class Notifier {
   private show(s: Say) {
     const n = this.n, lang = n.language, L = buttonLabels(lang);
     this.showing = true;
-    const isReminder = s.kind === "reminder";
+    this.current = s;
+    const isReminder = s.kind === "reminder", alert = isReminder || s.kind === "notice" || s.kind === "agent";
     this.host.present(s.text, {
-      seconds: isReminder ? Math.max(12, n.bubbleSeconds * 2.5) : n.bubbleSeconds,
-      sound: n.sound && s.kind !== "chat",
-      buttons: isReminder ? [
+      seconds: s.sticky ? STICKY_SECS : alert ? Math.max(12, n.bubbleSeconds * 2.5) : n.bubbleSeconds,
+      sound: n.sound,
+      anim: s.anim,
+      buttons: isReminder && s.link ? [
+        { label: lang === "id" ? "Gabung" : "Join", primary: true, onClick: () => { this.host.award?.("reminder"); this.host.openUrl?.(s.link!); this.host.close(); } },
+        { label: L.ok, onClick: () => this.host.close() },
+      ] : isReminder ? [
         { label: L.later, onClick: () => { this.snooze(s.text, SNOOZE_MS); this.host.close(); this.say(pick(lang, "snooze")); } },
-        { label: L.ok, primary: true, onClick: () => this.host.close() },
-      ] : undefined,
-      onClose: () => { this.showing = false; this.pump(); },
+        { label: L.ok, primary: true, onClick: () => { this.host.award?.("reminder"); this.host.close(); } },
+      ] : alert ? [{ label: L.ok, primary: true, onClick: () => this.host.close() }] : undefined,
+      onClose: () => { this.showing = false; this.current = undefined; this.pump(); },
+      onClick: s.onClick,
     });
     if (s.kind === "chat") this.lastChat = Date.now();
   }
@@ -170,27 +234,45 @@ export class Notifier {
   /** Always shown (even in quiet hours): previews and snooze confirmations. */
   say(text: string) { this.enqueue({ text, kind: "test" }); }
 
-  /** Optional chatter: respects its toggle, quiet hours, and doesn't pile up. */
-  chat(text: string, enabled = true, force = false) {
+  /** Important one-off update (pomodoro phase change): OK button, ignores quiet hours and peek mode. */
+  notice(text: string, anim?: string) { this.enqueue({ text: withName(text, this.n.userName), kind: "notice", anim }); }
+
+  /** Optional chatter: respects its toggle, quiet hours, peek mode, and doesn't pile up. */
+  chat(text: string, enabled = true, force = false, important = false) {
     const n = this.n;
     if (!n.enabled || !enabled || this.showing) return;
+    if (!important && this.host.peeking()) return;
     if (inQuiet(new Date(), n.quiet)) return;
     if (!force && Date.now() - this.lastChat < MIN_CHAT_GAP) return;
     this.enqueue({ text, kind: "chat" });
   }
 
-  greet() { this.chat(timeGreeting(new Date(), this.n.language), this.n.greetings, true); }
-  welcomeBack() { this.chat(pick(this.n.language, "welcome"), this.n.greetings, true); }
+  greet() { this.chat(withName(timeGreeting(new Date(), this.n.language), this.n.userName), this.n.greetings, true); }
+  welcomeBack() { this.chat(withName(pick(this.n.language, "welcome"), this.n.userName), this.n.greetings, true); }
   ouch() { this.chat(pick(this.n.language, "ouch"), this.n.reactions, true); }
   /** Short status remark (sit / stand) that bypasses the chatter cooldown. */
   remark(key: "sit" | "stand") { this.chat(pick(this.n.language, key), this.n.reactions, true); }
   purr() { this.chat(pick(this.n.language, "purr"), this.n.reactions); }
 
-  agent(kind: "completed" | "error" | "waiting", agent: string, secs?: number) {
+  /** Agent news. Replaces older news from the same agent and pushes aside idle chatter. */
+  agent(kind: "completed" | "error" | "waiting", agent: string, secs?: number, detail?: string, bid?: string) {
+    const n = this.n;
+    if (!n.enabled || !n.agentReactions) return;
     const key: LineKey = kind === "completed" ? "agentDone" : kind === "error" ? "agentError" : "agentWait";
     const label = AGENT_LABEL[agent] ?? agent;
     const took = secs !== undefined && secs >= 15 && kind !== "waiting" ? ` (${fmtDuration(secs)})` : "";
-    this.chat(`${pick(this.n.language, key)}  · ${label}${took}`, this.n.agentReactions, kind !== "waiting");
+    const open = bid && this.host.open ? () => this.host.open!(bid) : undefined;
+    const text = `${pick(n.language, key)}  · ${label}${took}${open ? "  ↗" : ""}${detail ? `\n${detail}` : ""}`;
+    this.queue = this.queue.filter((q) => q.agent !== agent);
+    const cur = this.current;
+    this.enqueue({ text, kind: "agent", agent, sticky: kind === "waiting", onClick: open });
+    if (this.showing && cur && (cur.agent === agent || cur.kind === "chat")) this.host.close();
+  }
+
+  /** The agent moved on (user answered / it resumed): drop its "waiting" bubble. */
+  agentResumed(agent: string) {
+    this.queue = this.queue.filter((q) => !(q.agent === agent && q.sticky));
+    if (this.showing && this.current?.agent === agent && this.current.sticky) this.host.close();
   }
 
   /** Called on every key press: after ~45 min of continuous typing, suggest a break. */
@@ -200,7 +282,7 @@ export class Notifier {
     r.last = now;
     if (now - r.start >= 45 * 60_000 && now - r.praised >= 45 * 60_000) {
       r.praised = now;
-      this.chat(pick(this.n.language, "praise"), this.n.praise, true);
+      this.chat(withName(pick(this.n.language, "praise"), this.n.userName), this.n.praise, true);
     }
   }
 }

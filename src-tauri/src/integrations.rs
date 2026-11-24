@@ -1,10 +1,13 @@
 //! One-click setup of agent hooks. Every change is explicit (the user clicked Install), idempotent,
-//! backed up, and removable. Only entries that mention `wanwanchan-notify` are ever touched on removal.
+//! backed up, and removable. Only entries that mention `wanwanchan-notify` (or the 0.1.x `wanwan-hook`
+//! relay, which 0.2 no longer listens for) are ever touched on removal.
 
 use serde_json::{json, Map, Value};
 use std::{fs, path::{Path, PathBuf}};
 
 const MARK: &str = "wanwanchan-notify";
+/// 0.1.x Claude relay (`node .../wanwan-hook.mjs`, port 3721): dead since 0.2, cleaned up by Install/Remove.
+const LEGACY_MARK: &str = "wanwan-hook";
 const ZSH_BEGIN: &str = "# >>> wanwanchan >>>";
 const ZSH_END: &str = "# <<< wanwanchan <<<";
 
@@ -39,6 +42,26 @@ fn mentions(v: &Value) -> bool {
     v.to_string().contains(MARK)
 }
 
+/// Drop every hook command containing `mark`; prune emptied groups and events. Returns groups touched.
+fn strip_hooks(hooks: &mut Map<String, Value>, mark: &str) -> usize {
+    let mut changed = 0;
+    for (_, arr) in hooks.iter_mut() {
+        if let Some(a) = arr.as_array_mut() {
+            let before: usize = a.iter().map(|g| g.get("hooks").and_then(Value::as_array).map_or(0, |h| h.len())).sum();
+            for g in a.iter_mut() {
+                if let Some(hs) = g.get_mut("hooks").and_then(Value::as_array_mut) {
+                    hs.retain(|h| !h.to_string().contains(mark));
+                }
+            }
+            a.retain(|g| g.get("hooks").and_then(Value::as_array).map(|h| !h.is_empty()).unwrap_or(true));
+            let after: usize = a.iter().map(|g| g.get("hooks").and_then(Value::as_array).map_or(0, |h| h.len())).sum();
+            if after != before { changed += 1; }
+        }
+    }
+    hooks.retain(|_, v| v.as_array().map(|a| !a.is_empty()).unwrap_or(true));
+    changed
+}
+
 fn quote(helper: &str) -> String {
     format!("'{}'", helper.replace('\'', "'\\''"))
 }
@@ -57,6 +80,7 @@ fn claude(home: &Path, helper: &str, install: bool) -> Result<String, String> {
     let obj = root.as_object_mut().ok_or("settings.json must be an object")?;
     let hooks = obj.entry("hooks").or_insert_with(|| json!({}));
     let hooks = hooks.as_object_mut().ok_or("\"hooks\" must be an object")?;
+    let legacy = strip_hooks(hooks, LEGACY_MARK);
     let mut changed = 0;
     if install {
         for (ev, matcher) in CLAUDE_EVENTS {
@@ -69,22 +93,11 @@ fn claude(home: &Path, helper: &str, install: bool) -> Result<String, String> {
             changed += 1;
         }
     } else {
-        for (_, arr) in hooks.iter_mut() {
-            if let Some(a) = arr.as_array_mut() {
-                let before = a.len();
-                for g in a.iter_mut() {
-                    if let Some(hs) = g.get_mut("hooks").and_then(Value::as_array_mut) {
-                        hs.retain(|h| !mentions(h));
-                    }
-                }
-                a.retain(|g| g.get("hooks").and_then(Value::as_array).map(|h| !h.is_empty()).unwrap_or(true));
-                if a.len() != before { changed += 1; }
-            }
-        }
-        hooks.retain(|_, v| v.as_array().map(|a| !a.is_empty()).unwrap_or(true));
+        changed += strip_hooks(hooks, MARK);
     }
-    if changed > 0 { write_json(&p, &root)?; }
-    Ok(if install { format!("Claude Code: {} hook(s) added (existing hooks kept)", changed) } else { "Claude Code: WanWan-chan hooks removed".into() })
+    if changed + legacy > 0 { write_json(&p, &root)?; }
+    let old = if legacy > 0 { ", old 0.1 hooks removed" } else { "" };
+    Ok(if install { format!("Claude Code: {} hook(s) added (existing hooks kept{old})", changed) } else { "Claude Code: WanWan-chan hooks removed".into() })
 }
 
 // ---------------------------------------------------------------- Cursor
@@ -255,6 +268,19 @@ mod tests {
         assert_eq!(v["hooks"]["Stop"].as_array().unwrap().len(), 1);
         assert!(v["hooks"].get("PreToolUse").is_none());
         assert_eq!(v["hooks"]["Stop"][0]["hooks"][0]["command"], "echo other");
+    }
+
+    #[test]
+    fn claude_install_removes_legacy_relay() {
+        let home = tmp("claude-legacy");
+        fs::create_dir_all(home.join(".claude")).unwrap();
+        fs::write(claude_path(&home), r#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"node \"/old/scripts/wanwan-hook.mjs\" Stop"}]},{"hooks":[{"type":"command","command":"echo other"}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"node /old/wanwan-hook.mjs SessionEnd"}]}]}}"#).unwrap();
+        claude(&home, "/x/wanwanchan-notify", true).unwrap();
+        let t = fs::read_to_string(claude_path(&home)).unwrap();
+        assert!(!t.contains("wanwan-hook"));
+        assert!(t.contains("echo other"));
+        let v = read_json(&claude_path(&home)).unwrap();
+        assert_eq!(v["hooks"]["SessionEnd"].as_array().unwrap().len(), 1); // only ours now
     }
 
     #[test]

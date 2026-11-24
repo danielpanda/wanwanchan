@@ -1,9 +1,12 @@
 export const STATES = [
   "idle", "blink", "walk", "run", "sit", "sleep", "look",
   "typing", "jump", "happy", "thinking", "drag", "drop", "error",
-  "groom", "stretch", "yawn", "wiggle",
+  "groom", "stretch", "yawn", "wiggle", "scroll", "peek",
 ] as const;
 export type PetState = (typeof STATES)[number];
+
+/** A custom character can't be used until each of these states has its own animation. */
+export const REQUIRED_STATES: readonly PetState[] = ["idle", "walk", "sit", "sleep", "jump", "drag", "happy", "typing"];
 
 export const STATE_LABELS: Record<PetState, string> = {
   idle: "Idle", blink: "Blink", walk: "Walk", run: "Run", sit: "Sit", sleep: "Sleep",
@@ -11,6 +14,7 @@ export const STATE_LABELS: Record<PetState, string> = {
   happy: "Happy (done / fast typing)", thinking: "Thinking", drag: "Drag", drop: "Drop",
   error: "Error",
   groom: "Groom (idle quirk)", stretch: "Stretch (idle quirk / wake up)", yawn: "Yawn (idle quirk / before sleep)", wiggle: "Wiggle & pounce (idle quirk)",
+  scroll: "Scroll (you scroll a page)", peek: "Peek (peek mode)",
 };
 
 export const AGENTS = ["claude", "codex", "cursor", "antigravity", "opencode", "custom"] as const;
@@ -20,7 +24,8 @@ export type AgentState = "idle" | "thinking" | "working" | "waiting" | "complete
 export interface Reminder {
   id: string;
   emoji: string;
-  kind: "interval" | "daily";
+  /** "once" fires at the next `time` and then switches itself off (message reminder). */
+  kind: "interval" | "daily" | "once";
   /** Minutes between reminders (interval). */
   every: number;
   /** "HH:MM" (daily). */
@@ -44,30 +49,68 @@ export interface NotifySettings {
   praise: boolean;
   reactions: boolean;
   reminders: Reminder[];
+  /** What the pet calls you in reminders and greetings. */
+  userName: string;
+  /** Note pinned above the pet's head. */
+  pinned: string;
 }
 
+export interface FocusSettings {
+  workMin: number;
+  breakMin: number;
+  longBreakMin: number;
+  /** Work sessions before a long break. */
+  cycles: number;
+  badge: boolean;
+}
+export const DEFAULT_FOCUS: FocusSettings = { workMin: 25, breakMin: 5, longBreakMin: 15, cycles: 4, badge: true };
+
+export interface BondState {
+  xp: number;
+  /** Local date (YYYY-MM-DD) the per-day caps below belong to. */
+  day: string;
+  dayXp: Record<string, number>;
+  streak: number;
+  /** Last day the daily bonus was claimed. */
+  last: string;
+}
+export const DEFAULT_BOND: BondState = { xp: 0, day: "", dayXp: {}, streak: 0, last: "" };
+
+export interface CalendarSettings {
+  enabled: boolean;
+  /** Published .ics feed URLs (Outlook, Google, iCloud...). */
+  urls: string[];
+  leadMin: number;
+  /** Show event titles in bubbles (off = just "Meeting"). */
+  titles: boolean;
+}
+export const DEFAULT_CALENDAR: CalendarSettings = { enabled: false, urls: [], leadMin: 5, titles: true };
+
 export const DEFAULT_REMINDERS: Reminder[] = [
-  { id: "water", emoji: "💧", kind: "interval", every: 45, time: "", text: "", enabled: true, builtin: true },
-  { id: "eyes", emoji: "👀", kind: "interval", every: 20, time: "", text: "", enabled: false, builtin: true },
-  { id: "posture", emoji: "🧘", kind: "interval", every: 60, time: "", text: "", enabled: true, builtin: true },
-  { id: "stretch", emoji: "🙆", kind: "interval", every: 90, time: "", text: "", enabled: false, builtin: true },
-  { id: "lunch", emoji: "🍙", kind: "daily", every: 60, time: "12:00", text: "", enabled: false, builtin: true },
-  { id: "sleep", emoji: "😴", kind: "daily", every: 60, time: "23:30", text: "", enabled: false, builtin: true },
+  { id: "water", emoji: "", kind: "interval", every: 45, time: "", text: "", enabled: true, builtin: true },
+  { id: "eyes", emoji: "", kind: "interval", every: 20, time: "", text: "", enabled: false, builtin: true },
+  { id: "posture", emoji: "", kind: "interval", every: 60, time: "", text: "", enabled: true, builtin: true },
+  { id: "stretch", emoji: "", kind: "interval", every: 60, time: "", text: "", enabled: true, builtin: true },
+  { id: "lunch", emoji: "", kind: "daily", every: 60, time: "12:00", text: "", enabled: false, builtin: true },
+  { id: "sleep", emoji: "", kind: "daily", every: 60, time: "23:30", text: "", enabled: false, builtin: true },
 ];
 
 export const DEFAULT_NOTIFY: NotifySettings = {
   enabled: true,
   language: "id",
   bubbleSeconds: 8,
-  sound: false,
+  sound: true,
   quiet: { enabled: false, from: "22:00", to: "07:00" },
   greetings: true,
-  chatter: true,
-  chatterEvery: 25,
+  // Off by default: bubbles are kept for things that matter (reminders, pomodoro, agents).
+  chatter: false,
+  chatterEvery: 45,
   agentReactions: true,
   praise: true,
   reactions: true,
   reminders: DEFAULT_REMINDERS,
+  userName: "",
+  pinned: "",
 };
 
 export interface Settings {
@@ -83,13 +126,22 @@ export interface Settings {
   mouseInteraction: boolean;
   followCursor: boolean;
   keyboardInteraction: boolean;
+  /** Dance with floating notes while music / YouTube is playing. */
+  musicDance: boolean;
   randomMotion: boolean;
   sleepMode: boolean;
   wanderEvery: number;
   sitAfter: number;
   sleepAfter: number;
+  /** Hide at the screen edge and only come out for reminders. */
+  peekMode: boolean;
   agent: { enabled: boolean; port: number; agents: Record<AgentId, boolean> };
   notify: NotifySettings;
+  focus: FocusSettings;
+  calendar: CalendarSettings;
+  bond: BondState;
+  /** Equipped accessory ids (only those unlocked by the bond level are drawn). */
+  accessories: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -105,17 +157,23 @@ export const DEFAULT_SETTINGS: Settings = {
   mouseInteraction: true,
   followCursor: false,
   keyboardInteraction: true,
+  musicDance: true,
   randomMotion: true,
   sleepMode: true,
   wanderEvery: 15,
   sitAfter: 45,
   sleepAfter: 180,
+  peekMode: false,
   agent: {
     enabled: false,
     port: 47321,
     agents: { claude: true, codex: true, cursor: true, antigravity: true, opencode: true, custom: true },
   },
   notify: DEFAULT_NOTIFY,
+  focus: DEFAULT_FOCUS,
+  calendar: DEFAULT_CALENDAR,
+  bond: DEFAULT_BOND,
+  accessories: [],
 };
 
 export function withDefaults(raw: Partial<Settings> | null | undefined): Settings {
@@ -129,6 +187,10 @@ export function withDefaults(raw: Partial<Settings> | null | undefined): Setting
       ...(r.agent ?? {}),
       agents: { ...DEFAULT_SETTINGS.agent.agents, ...(r.agent?.agents ?? {}) },
     },
+    focus: { ...DEFAULT_FOCUS, ...(r.focus ?? {}) },
+    calendar: { ...DEFAULT_CALENDAR, ...(r.calendar ?? {}), urls: Array.isArray(r.calendar?.urls) ? r.calendar!.urls.filter((u) => typeof u === "string") : [] },
+    bond: { ...DEFAULT_BOND, ...(r.bond ?? {}), dayXp: { ...(r.bond?.dayXp ?? {}) } },
+    accessories: Array.isArray(r.accessories) ? r.accessories.filter((a) => typeof a === "string") : [],
     notify: {
       ...DEFAULT_NOTIFY,
       ...(r.notify ?? {}),
@@ -161,4 +223,8 @@ export interface SpriteConfig {
   smooth: boolean;
   /** Extra animation names to play at random while idle. */
   quirks: string[];
+  /** "strips": built one row per state (the state-by-state importer). */
+  source?: "strips";
+  /** Per-frame head position (x, y in frame pixels) for accessories; bundled characters only. */
+  anchors?: { x: number; y: number }[];
 }
