@@ -99,7 +99,7 @@ export const DEFAULT_NOTIFY: NotifySettings = {
   enabled: true,
   language: "id",
   bubbleSeconds: 8,
-  sound: false,
+  sound: true,
   quiet: { enabled: false, from: "22:00", to: "07:00" },
   greetings: true,
   // Off by default: bubbles are kept for things that matter (reminders, pomodoro, agents).
@@ -126,6 +126,8 @@ export interface Settings {
   mouseInteraction: boolean;
   followCursor: boolean;
   keyboardInteraction: boolean;
+  /** Dance with floating notes while music / YouTube is playing. */
+  musicDance: boolean;
   randomMotion: boolean;
   sleepMode: boolean;
   wanderEvery: number;
@@ -155,6 +157,7 @@ export const DEFAULT_SETTINGS: Settings = {
   mouseInteraction: true,
   followCursor: false,
   keyboardInteraction: true,
+  musicDance: true,
   randomMotion: true,
   sleepMode: true,
   wanderEvery: 15,

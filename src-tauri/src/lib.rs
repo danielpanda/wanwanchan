@@ -2,6 +2,7 @@ mod agents;
 mod characters;
 mod input;
 mod integrations;
+mod media;
 mod settings;
 
 use serde_json::{json, Value};
@@ -149,6 +150,7 @@ fn apply(app: &AppHandle, s: &Value) {
     // Global monitors only exist while the pet is visible.
     let want_keys = enabled && bool_of(s, "keyboardInteraction", true);
     input::configure(app, enabled, want_keys);
+    media::configure(app, enabled && bool_of(s, "musicDance", true));
 
     // Launch at login
     let al = app.autolaunch();
@@ -451,6 +453,12 @@ fn save_character_config(app: AppHandle, id: String, config: Value) -> Result<()
     Ok(())
 }
 #[tauri::command]
+fn set_character_sound(app: AppHandle, id: String, path: Option<String>) -> Result<(), String> {
+    characters::set_sound(&app, &id, path.as_deref())?;
+    let _ = app.emit("character-changed", id);
+    Ok(())
+}
+#[tauri::command]
 fn delete_character(app: AppHandle, id: String) -> Result<(), String> {
     characters::delete(&app, &id)?;
     let current = app.state::<SettingsStore>().get();
@@ -578,6 +586,7 @@ pub fn run() {
             save_character_image,
             load_character_original,
             delete_character,
+            set_character_sound,
             read_text_file,
             read_image_file,
             create_character,

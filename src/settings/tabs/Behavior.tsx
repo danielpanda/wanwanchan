@@ -41,6 +41,11 @@ export function Behavior({ settings: s, update }: TabProps) {
           </Row>
         )}
       </Group>
+      <Group title="Music">
+        <Row label="Dance to music" desc="Dance with floating notes while music or YouTube is playing. Uses the macOS Now Playing info, so it follows Music, Spotify and browser media.">
+          <Toggle value={s.musicDance} onChange={(v) => update({ musicDance: v })} />
+        </Row>
+      </Group>
       <Group title="Idle">
         <Row label="Random motion" desc="Occasional walks and runs."><Toggle value={s.randomMotion} onChange={(v) => update({ randomMotion: v })} /></Row>
         <Row label="Wander every" desc="Average time between walks.">

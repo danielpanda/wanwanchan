@@ -215,7 +215,7 @@ export class Notifier {
     const isReminder = s.kind === "reminder", alert = isReminder || s.kind === "notice" || s.kind === "agent";
     this.host.present(s.text, {
       seconds: s.sticky ? STICKY_SECS : alert ? Math.max(12, n.bubbleSeconds * 2.5) : n.bubbleSeconds,
-      sound: n.sound && s.kind !== "chat",
+      sound: n.sound,
       anim: s.anim,
       buttons: isReminder && s.link ? [
         { label: lang === "id" ? "Gabung" : "Join", primary: true, onClick: () => { this.host.award?.("reminder"); this.host.openUrl?.(s.link!); this.host.close(); } },

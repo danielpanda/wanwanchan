@@ -8,6 +8,8 @@ use tauri::{AppHandle, Manager};
 
 const MAX_PNG_BYTES: u64 = 20 * 1024 * 1024;
 const MAX_DIM: u32 = 8192;
+const MAX_SOUND_BYTES: u64 = 2 * 1024 * 1024;
+const SOUND_TYPES: [(&str, &str); 4] = [("mp3", "audio/mpeg"), ("wav", "audio/wav"), ("m4a", "audio/mp4"), ("ogg", "audio/ogg")];
 
 pub fn dir(app: &AppHandle) -> Result<PathBuf, String> {
     let d = app.path().app_data_dir().map_err(|e| e.to_string())?.join("characters");
@@ -69,7 +71,44 @@ pub fn load(app: &AppHandle, id: &str) -> Result<Value, String> {
         .map_err(|e| format!("sprite.json: {e}"))?;
     let png = fs::read(p.join("sheet.png")).map_err(|e| e.to_string())?;
     png_size(&png)?;
-    Ok(json!({"config": config, "image": format!("data:image/png;base64,{}", STANDARD.encode(png))}))
+    let sound = SOUND_TYPES.iter().find_map(|(ext, mime)| {
+        let bytes = fs::read(p.join(format!("sound.{ext}"))).ok()?;
+        Some(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
+    });
+    Ok(json!({"config": config, "image": format!("data:image/png;base64,{}", STANDARD.encode(png)), "sound": sound}))
+}
+
+/// Copy an audio file in as `<id>/sound.<ext>` (bubble sound); `None` removes it.
+pub fn set_sound(app: &AppHandle, id: &str, path: Option<&str>) -> Result<(), String> {
+    if !valid_id(id) || id == "cat" {
+        return Err("This character cannot be modified".into());
+    }
+    let d = dir(app)?.join(id);
+    if !d.is_dir() {
+        return Err("Character not found".into());
+    }
+    let new = match path {
+        Some(path) => {
+            let src = PathBuf::from(path);
+            let ext = src.extension().and_then(|e| e.to_str()).map(str::to_lowercase).unwrap_or_default();
+            if !SOUND_TYPES.iter().any(|(e, _)| *e == ext) {
+                return Err("Use an MP3, WAV, M4A or OGG file".into());
+            }
+            let meta = fs::metadata(&src).map_err(|e| e.to_string())?;
+            if !meta.is_file() || meta.len() > MAX_SOUND_BYTES {
+                return Err("File is missing or larger than 2 MB".into());
+            }
+            Some((ext, fs::read(&src).map_err(|e| e.to_string())?))
+        }
+        None => None,
+    };
+    for (ext, _) in SOUND_TYPES {
+        let _ = fs::remove_file(d.join(format!("sound.{ext}")));
+    }
+    if let Some((ext, bytes)) = new {
+        fs::write(d.join(format!("sound.{ext}")), bytes).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 pub fn import(app: &AppHandle, path: &str, name: &str) -> Result<Value, String> {

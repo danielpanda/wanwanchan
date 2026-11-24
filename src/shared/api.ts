@@ -11,13 +11,15 @@ export function onSettings(cb: (s: Settings) => void): Promise<UnlistenFn> {
 }
 
 export interface CharacterInfo { id: string; name: string; builtin: boolean }
-export interface LoadedCharacter { config: unknown; image: string }
+export interface LoadedCharacter { config: unknown; image: string; sound?: string | null }
 export const listCharacters = () => invoke<CharacterInfo[]>("list_characters");
 export const loadUserCharacter = (id: string) => invoke<LoadedCharacter>("load_character", { id });
 export const importCharacter = (path: string, name: string) =>
   invoke<{ id: string; width: number; height: number }>("import_character", { path, name });
 export const saveCharacterConfig = (id: string, config: unknown) =>
   invoke<void>("save_character_config", { id, config });
+/** Copy an audio file in as the character's bubble sound; null removes it. */
+export const setCharacterSound = (id: string, path: string | null) => invoke<void>("set_character_sound", { id, path });
 export const deleteCharacter = (id: string) => invoke<void>("delete_character", { id });
 export const readTextFile = (path: string) => invoke<string>("read_text_file", { path });
 export const openCharactersDir = () => invoke<void>("open_characters_dir");

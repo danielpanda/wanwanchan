@@ -5,6 +5,7 @@ import { fetchUrlText, focusApp, focusPet, listApps, loadUserCharacter, openApp,
 import { AGENT_LABEL, pick } from "../shared/messages";
 import { ACCESSORIES, award, levelOf, unlocked, type XpKind } from "../shared/bond";
 import { drawAccessories } from "./accessories";
+import { MusicFx } from "./music";
 import { Bubble } from "./bubble";
 import { CalendarSync } from "./calendar";
 import { FocusController, type FocusAction } from "./focus";
@@ -36,6 +37,8 @@ export async function startPet() {
   document.body.appendChild(canvas);
   const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
   const bubble = new Bubble();
+  const musicFx = new MusicFx();
+  let musicOn = false, lastDanceFlip = 0;
   const history = new AgentHistory();
   let apps: string[] | null = null;
   const getApps = async () => (apps ??= await listApps().catch(() => []));
@@ -247,8 +250,11 @@ export async function startPet() {
     y = Math.min(Math.max(y, ch), Math.max(ch, H));
   }
 
+  const dancing = () => musicOn && settings.musicDance && !dragging && sm.current(performance.now()).key === "music";
+  const danceOffset = (now: number) => (dancing() ? Math.abs(Math.sin(now / 210)) * ch * 0.09 : 0);
+
   const jumpOffset = (now: number) => {
-    if (!jump) return 0;
+    if (!jump) return danceOffset(now);
     const t = (now - jump.start) / jump.dur;
     if (t >= 1) { jump = null; return 0; }
     return Math.sin(Math.PI * t) * ch * 0.42;
@@ -284,6 +290,7 @@ export async function startPet() {
     const t = `translate3d(${dev(r.left)}px,${dev(r.top)}px,0)${r.sc !== 1 ? ` scale(${r.sc.toFixed(4)})` : ""}`;
     if (t !== lastTransform) { canvas.style.transform = t; lastTransform = t; }
     focus.position(r.cx, r.top + ch * r.sc, W);
+    if (musicFx.active) musicFx.position(r.cx, r.top, cw * r.sc);
     if (panel.visible) panel.position(r.cx, r.top, r.top + ch * r.sc, W);
     if (bubble.visible) bubble.position(r.cx, r.top, r.top + ch * r.sc, W);
     if (note.style.display !== "none") {
@@ -398,12 +405,16 @@ export async function startPet() {
       }
       clampPos();
     }
+    if (dancing()) {
+      if (now - lastDanceFlip > 640) { lastDanceFlip = now; facing = facing > 0 ? -1 : 1; }
+      if (!musicFx.active) musicFx.start();
+    } else if (musicFx.active) musicFx.stop();
     place(now);
     draw(now);
   }
 
   function needsSmooth() {
-    return (!!giant && performance.now() - giant.start < giant.dur + 50) || dragging || !!jump || !!lunge || (!!moveTarget && (state === "walk" || state === "run"));
+    return (!!giant && performance.now() - giant.start < giant.dur + 50) || dragging || !!jump || !!lunge || dancing() || (!!moveTarget && (state === "walk" || state === "run"));
   }
 
   function schedule(now: number) {
@@ -791,11 +802,13 @@ export async function startPet() {
 
   // ---------------------------------------------------------------- settings / lifecycle
   async function loadCharacter(id: string) {
+    bubble.setVoice(null);
     try {
       if ((await builtinCharacters()).some((b) => b.id === id)) sprite = await loadBuiltin(id);
       else {
         const c = await loadUserCharacter(id);
         sprite = await buildSprite(c.config, c.image);
+        bubble.setVoice(c.sound ?? null);
         const missing = missingStates(sprite.cfg);
         if (missing.length) { console.warn(`character "${id}" is missing states: ${missing.join(", ")}`); sprite = await loadBuiltinCat(); }
       }
@@ -832,6 +845,7 @@ export async function startPet() {
     if (!wasRunning || first) resume();
     anim = sprite ? resolveAnim(sprite.cfg, state, next.fps) : null;
     updateRest();
+    syncMusic();
     scheduleWander();
     notifier.sync();
     calendar.configure();
@@ -851,8 +865,23 @@ export async function startPet() {
     panel.hide();
     notifier.stop();
     calendar.stop();
+    musicFx.stop();
     focus.dispatch("stop");
     updateNote();
+  }
+
+  let musicSaid = false;
+  function syncMusic() {
+    if (!musicOn) musicSaid = false;
+    if (running && musicOn && settings.musicDance) {
+      const say = () => notifier.chat(pick(settings.notify.language, "music"), settings.notify.reactions, true);
+      if (!musicSaid) { musicSaid = true; say(); }
+    }
+    if (running && musicOn && settings.musicDance) {
+      const a = sprite && ["wiggle", "happy"].find((n) => hasAnim(sprite!.cfg, n));
+      sm.hold("music", a ?? "idle", PRIORITY.music);
+    } else { sm.release("music"); musicFx.stop(); }
+    wake();
   }
 
   function resume() {
@@ -885,6 +914,7 @@ export async function startPet() {
     markActivity(now);
     wake();
   });
+  await listen<boolean>("music", (e) => { musicOn = !!e.payload; syncMusic(); });
   await listen<Settings>("settings-changed", (e) => { void applySettings(withDefaults(e.payload)); });
   await listen<{ agent: string; state: AgentStateName; detail?: string; bid?: string | null }>("agent-event", (e) => onAgentEvent(e.payload));
   await listen<string>("character-changed", (e) => {

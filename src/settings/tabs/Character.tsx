@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
   deleteCharacter, exportCharacterPack, importCharacter, importCharacterPack, listCharacters, loadUserCharacter, openCharactersDir, readTextFile,
-  saveCharacterConfig, saveCharacterImage, loadCharacterOriginal, readImageFile, createCharacter, type CharacterInfo,
+  saveCharacterConfig, saveCharacterImage, loadCharacterOriginal, readImageFile, createCharacter, setCharacterSound, petAction, type CharacterInfo,
 } from "../../shared/api";
 import { REQUIRED_STATES, STATES, STATE_LABELS, type AnimationDef, type PetState, type SpriteConfig } from "../../shared/types";
 import { alphaOf, animationsFromGuess, guessGrid, suggestRender } from "../../shared/detect";
@@ -13,7 +13,7 @@ import { Group, Page, Row, Select, Slider, Toggle } from "../ui";
 import type { TabProps } from "./types";
 import { RowGuide } from "./RowGuide";
 
-interface Loaded { cfg: SpriteConfig; img: HTMLImageElement }
+interface Loaded { cfg: SpriteConfig; img: HTMLImageElement; sound?: boolean }
 
 async function loadForEditing(id: string): Promise<Loaded> {
   if ((await builtinCharacters()).some((b) => b.id === id)) {
@@ -21,7 +21,7 @@ async function loadForEditing(id: string): Promise<Loaded> {
     return { cfg, img: await loadImage(`/characters/${id}/sheet.png`) };
   }
   const c = await loadUserCharacter(id);
-  return { cfg: normalizeConfig(c.config), img: await loadImage(c.image) };
+  return { cfg: normalizeConfig(c.config), img: await loadImage(c.image), sound: !!c.sound };
 }
 
 function AnimPreview({ cfg, img, state, fps }: { cfg: SpriteConfig; img: HTMLImageElement; state: PetState; fps: number | null }) {
@@ -116,6 +116,12 @@ export function CharacterTab({ settings: s, update }: TabProps) {
     const dest = await saveDialog({ defaultPath: `${(draft?.name ?? "character").replace(/[^\w-]+/g, "-")}.wanwanchan`, filters: [{ name: "WanWan-chan character", extensions: ["wanwanchan"] }] });
     if (!dest) return;
     try { await exportCharacterPack(s.character, dest); setMsg(`Exported to ${dest}`); } catch (e) { setMsg(String(e)); }
+  }
+
+  async function changeSound(pick: boolean) {
+    const path = pick ? await open({ multiple: false, filters: [{ name: "Audio", extensions: ["mp3", "wav", "m4a", "ogg"] }] }) : null;
+    if (pick && typeof path !== "string") return;
+    try { await setCharacterSound(s.character, path as string | null); setReloadKey((k) => k + 1); setMsg(pick ? "Sound updated." : "Sound removed."); } catch (e) { setMsg(String(e)); }
   }
 
   async function doImportPack() {
@@ -240,6 +246,13 @@ export function CharacterTab({ settings: s, update }: TabProps) {
           <label className="flex items-center gap-1 text-[12px]"><input type="checkbox" checked={opt.animate} onChange={(e) => setOpt({ ...opt, animate: e.target.checked })} />animate</label>
           {!builtin && draft?.source !== "strips" && <button className="btn" disabled={busy} onClick={reprocess}>Re-process</button>}
         </Row>
+        {!builtin && (
+          <Row label="Bubble sound" desc={`Plays when a speech bubble pops up (Notifications → Sound). MP3, WAV, M4A or OGG, max 2 MB. ${loaded?.sound ? "Custom sound set." : "Default: a little bark."}`}>
+            <button className="btn" onClick={() => changeSound(true)}>Upload sound…</button>
+            {loaded?.sound && <button className="btn" onClick={() => changeSound(false)}>Remove</button>}
+            <button className="btn" onClick={() => petAction("say:Woof!")}>Test</button>
+          </Row>
+        )}
         <Row label="Share" desc="Export your character as a .wanwanchan file, or import a .wanwanchan / .pixelmate pack.">
           {!builtin && <button className="btn" onClick={doExport}>Export…</button>}
           <button className="btn" onClick={doImportPack}>Import pack…</button>

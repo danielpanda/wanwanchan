@@ -32,7 +32,7 @@ export function Notifications({ settings: s, update }: TabProps) {
         <Row label="Bubble duration" desc="Reminders stay about 2.5× longer and have Snooze / OK buttons.">
           <Slider value={n.bubbleSeconds} min={3} max={20} format={(v) => `${v} s`} disabled={!n.enabled} onChange={(v) => set({ bubbleSeconds: v })} />
         </Row>
-        <Row label="Sound" desc="A tiny 8-bit blip with reminders.">
+        <Row label="Sound" desc="A little bark whenever a bubble pops up. Custom characters can use their own sound (Character tab).">
           <Toggle value={n.sound} disabled={!n.enabled} onChange={(v) => set({ sound: v })} />
           <button className="btn" onClick={() => petAction(`say:${pick(n.language, "chatter")}`)}>Test bubble</button>
         </Row>
